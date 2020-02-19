@@ -12,6 +12,19 @@ pipeline {
     }
     stages {
         stage('Build Kong') {
+            when {
+                beforeAgent true
+                anyOf {
+                    allOf {
+                        buildingTag()
+                        not { triggeredBy 'TimerTrigger' }
+                    }
+                    allOf {
+                        triggeredBy 'TimerTrigger'
+                        anyOf { branch 'master'; branch 'next' }
+                    }
+                }
+            }
             agent {
                 node {
                     label 'docker-compose'
@@ -29,6 +42,19 @@ pipeline {
             }
         }
         stage('Integration Tests') {
+            when {
+                beforeAgent true
+                anyOf {
+                    allOf {
+                        buildingTag()
+                        not { triggeredBy 'TimerTrigger' }
+                    }
+                    allOf {
+                        triggeredBy 'TimerTrigger'
+                        anyOf { branch 'master'; branch 'next' }
+                    }
+                }
+            }
             parallel {
                 stage('dbless') {
                     agent {
@@ -108,6 +134,7 @@ pipeline {
         }
         stage('Nightly Releases') {
             when {
+                beforeAgent true
                 allOf {
                     triggeredBy 'TimerTrigger'
                     anyOf { branch 'master'; branch 'next' }
@@ -291,7 +318,11 @@ pipeline {
         }
         stage('Release') {
             when {
-                buildingTag()
+                beforeAgent true
+                allOf {
+                    buildingTag()
+                    not { triggeredBy 'TimerTrigger' }
+                }
             }
             parallel {
                 stage('Ubuntu Xenial Release') {
