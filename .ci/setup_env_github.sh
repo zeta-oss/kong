@@ -40,7 +40,8 @@ kong-ngx-build \
     --openresty $OPENRESTY \
     --kong-nginx-module $KONG_NGINX_MODULE_BRANCH \
     --luarocks $LUAROCKS \
-    --openssl $OPENSSL
+    --openssl $OPENSSL \
+    --debug
 
 OPENSSL_INSTALL=$INSTALL_ROOT/openssl
 OPENRESTY_INSTALL=$INSTALL_ROOT/openresty
