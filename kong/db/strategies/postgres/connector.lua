@@ -120,6 +120,56 @@ function tsort:sort()
 end
 
 
+local function get_operation(self, operation)
+  if  operation ~= nil
+  and operation ~= "read"
+  and operation ~= "write"
+  and operation ~= "admin"
+  and operation ~= "migrations"
+  then
+    error("operation must be 'read', 'write', 'admin' or 'migrations', was: " ..
+          tostring(operation), 3)
+  end
+
+  if self.migrating or operation == "migrations" then
+    return "migrations"
+  end
+
+  if operation ~= "admin" then
+    local phase = get_phase()
+    if phase == "content" and (kong and kong.ctx and
+                               kong_get_phase(kong) == ADMIN_API_PHASE) then
+      return "admin"
+    end
+  end
+
+  if operation == "read" and not self.config_ro then
+    return "write"
+  end
+
+  return operation or "write"
+end
+
+
+local function get_config(self, operation)
+  operation = get_operation(self, operation)
+  if operation == "read" then
+    if self.config_ro then
+      return self.config_ro
+    end
+
+  elseif operation == "admin" then
+    return self.config_adm
+
+  elseif operation == "migrations" then
+
+    return self.config_mig
+  end
+
+  return self.config
+end
+
+
 local function iterator(rows)
   local i = 0
   return function()
@@ -162,7 +212,8 @@ local function reset_schema(self)
     }
   end
 
-  local schema = self:escape_identifier(self.config.schema)
+  local config = get_config(self)
+  local schema = self:escape_identifier(config.schema)
   local ok, err = self:query(concat {
     "BEGIN;\n",
     "  DO $$\n",
@@ -173,7 +224,7 @@ local function reset_schema(self)
     "  EXCEPTION WHEN insufficient_privilege THEN\n", drop_tables,
     "  END;\n",
     "  $$;\n",
-    "    SET SCHEMA ",  self:escape_literal(self.config.schema), ";\n",
+    "    SET SCHEMA ",  self:escape_literal(config.schema), ";\n",
     "COMMIT;",  })
 
   if not ok then
@@ -188,7 +239,7 @@ local setkeepalive
 
 
 local function connect(config)
-  local phase  = get_phase(kong)
+  local phase  = get_phase()
   if phase == "init" or phase == "init_worker" or ngx.IS_CLI then
     -- Force LuaSocket usage in the CLI in order to allow for self-signed
     -- certificates to be trusted (via opts.cafile) in the resty-cli
@@ -268,7 +319,12 @@ _mt.__index = _mt
 
 
 function _mt:get_stored_connection(operation)
-  local conn = self.super.get_stored_connection(self, operation)
+  local op = get_operation(self, operation)
+  if operation == "read" and op == "write" then
+    op = "read"
+  end
+
+  local conn = self.super.get_stored_connection(self, op)
   if conn and conn.sock then
     return conn
   end
@@ -375,10 +431,12 @@ function _mt:infos()
     db_ver = match(self.major_minor_version, "^(%d+%.%d+)")
   end
 
+   local config = get_config(self)
+
   return {
     strategy    = "PostgreSQL",
-    db_name     = self.config.database,
-    db_schema   = self.config.schema,
+    db_name     = config.database,
+    db_schema   = config.schema,
     db_desc     = "database",
     db_ver      = db_ver or "unknown",
     db_readonly = self.config_ro ~= nil,
@@ -387,12 +445,12 @@ end
 
 
 function _mt:connect(operation)
-  if operation ~= nil and operation ~= "read" and operation ~= "write" then
-    error("operation must be 'read' or 'write', was: " .. tostring(operation), 2)
-  end
+  operation = get_operation(self, operation)
 
-  if not operation or not self.config_ro then
-    operation = "write"
+  if operation == "migrations" then
+    self.migrating = true
+  else
+    self.migrating = nil
   end
 
   local conn = self:get_stored_connection(operation)
@@ -400,8 +458,7 @@ function _mt:connect(operation)
     return conn
   end
 
-  local connection, err = connect(operation == "write" and
-                                  self.config or self.config_ro)
+  local connection, err = connect(get_config(self, operation))
   if not connection then
     return nil, err
   end
@@ -413,12 +470,23 @@ end
 
 
 function _mt:connect_migrations()
-  return self:connect("write")
+  return self:connect("migrations")
 end
 
 
 function _mt:close()
-  for operation in pairs(OPERATIONS) do
+  local ops
+  local operation = get_operation(self)
+  if operation == "migrations" or operation == "admin" then
+    ops = {
+      [operation] = true,
+    }
+
+  else
+    ops = OPERATIONS
+  end
+
+  for operation in pairs(ops) do
     local conn = self:get_stored_connection(operation)
     if conn then
       local _, err = conn:disconnect()
@@ -436,7 +504,18 @@ end
 
 
 function _mt:setkeepalive()
-  for operation in pairs(OPERATIONS) do
+  local ops
+  local operation = get_operation(self)
+  if operation == "migrations" or operation == "admin" then
+    ops = {
+      [operation] = true,
+    }
+
+  else
+    ops = OPERATIONS
+  end
+
+  for operation in pairs(ops) do
     local conn = self:get_stored_connection(operation)
     if conn then
       local _, err = setkeepalive(conn)
@@ -454,6 +533,7 @@ end
 
 
 function _mt:acquire_query_semaphore_resource(operation)
+  operation = get_operation(self, operation)
   local sem = self["sem_" .. operation]
   if not sem then
     return true
@@ -466,7 +546,8 @@ function _mt:acquire_query_semaphore_resource(operation)
     end
   end
 
-  local ok, err = sem:wait(self.config.sem_timeout)
+  local config = get_config(self, operation)
+  local ok, err = sem:wait(config.sem_timeout)
   if not ok then
     return nil, err
   end
@@ -476,6 +557,7 @@ end
 
 
 function _mt:release_query_semaphore_resource(operation)
+  operation = get_operation(self, operation)
   local sem = self["sem_" .. operation]
   if not sem then
     return true
@@ -493,20 +575,7 @@ end
 
 
 function _mt:query(sql, operation)
-  if operation ~= nil and operation ~= "read" and operation ~= "write" then
-    error("operation must be 'read' or 'write', was: " .. tostring(operation), 2)
-  end
-
-  local phase  = get_phase(kong)
-
-  if not operation or
-     not self.config_ro or
-     (phase == "content" and kong_get_phase(kong) == ADMIN_API_PHASE)
-  then
-    -- admin API requests skips the replica optimization
-    -- to ensure all its results are always strongly consistent
-    operation = "write"
-  end
+  operation = get_operation(self, operation)
 
   local res, err, partial, num_queries
 
@@ -522,9 +591,7 @@ function _mt:query(sql, operation)
 
   else
     local connection
-    local config = operation == "write" and self.config or self.config_ro
-
-    connection, err = connect(config)
+    connection, err = connect(get_config(self, operation))
     if not connection then
       self:release_query_semaphore_resource(operation)
       return nil, err
@@ -745,16 +812,18 @@ end
 
 
 function _mt:schema_bootstrap(kong_config, default_locks_ttl)
-  local conn = self:get_stored_connection()
+  local conn = self:get_stored_connection("migrations")
   if not conn then
     error("no connection")
   end
 
   -- create schema if not exists
 
-  logger.debug("creating '%s' schema if not existing...", self.config.schema)
+  local config = get_config(self)
 
-  local schema = self:escape_identifier(self.config.schema)
+  logger.debug("creating '%s' schema if not existing...", config.schema)
+
+  local schema = self:escape_identifier(config.schema)
   local ok, err = self:query(concat {
     "BEGIN;\n",
     "  DO $$\n",
@@ -765,7 +834,7 @@ function _mt:schema_bootstrap(kong_config, default_locks_ttl)
     "    -- Do nothing, perhaps the schema has been created already\n",
     "  END;\n",
     "  $$;\n",
-    "  SET SCHEMA ",  self:escape_literal(self.config.schema), ";\n",
+    "  SET SCHEMA ",  self:escape_literal(config.schema), ";\n",
     "COMMIT;",
   })
 
@@ -773,7 +842,7 @@ function _mt:schema_bootstrap(kong_config, default_locks_ttl)
     return nil, err
   end
 
-  logger.debug("successfully created '%s' schema", self.config.schema)
+  logger.debug("successfully created '%s' schema", config.schema)
 
   -- create schema meta table if not exists
 
@@ -807,7 +876,7 @@ end
 
 
 function _mt:schema_reset()
-  local conn = self:get_stored_connection()
+  local conn = self:get_stored_connection("migrations")
   if not conn then
     error("no connection")
   end
@@ -825,7 +894,7 @@ function _mt:run_up_migration(name, up_sql)
     error("up_sql must be a string", 2)
   end
 
-  local conn = self:get_stored_connection()
+  local conn = self:get_stored_connection("migrations")
   if not conn then
     error("no connection")
   end
@@ -860,7 +929,7 @@ function _mt:record_migration(subsystem, name, state)
     error("name must be a string", 2)
   end
 
-  local conn = self:get_stored_connection()
+  local conn = self:get_stored_connection("migrations")
   if not conn then
     error("no connection")
   end
@@ -925,7 +994,6 @@ function _M.new(kong_config)
     schema      = kong_config.pg_schema or "",
     ssl         = kong_config.pg_ssl,
     ssl_verify  = kong_config.pg_ssl_verify,
-    cafile      = kong_config.lua_ssl_trusted_certificate,
     sem_max     = kong_config.pg_max_concurrent_queries or 0,
     sem_timeout = (kong_config.pg_semaphore_timeout or 60000) / 1000,
   }
@@ -962,10 +1030,9 @@ function _M.new(kong_config)
       schema      = kong_config.pg_ro_schema,
       ssl         = kong_config.pg_ro_ssl,
       ssl_verify  = kong_config.pg_ro_ssl_verify,
-      cafile      = kong_config.lua_ssl_trusted_certificate,
       sem_max     = kong_config.pg_ro_max_concurrent_queries,
       sem_timeout = kong_config.pg_ro_semaphore_timeout and
-                    (kong_config.pg_ro_semaphore_timeout / 1000) or nil,
+                   (kong_config.pg_ro_semaphore_timeout / 1000) or nil,
     }
 
     local config_ro = utils.table_merge(config, ro_override)
@@ -975,7 +1042,7 @@ function _M.new(kong_config)
       local err
       sem, err = semaphore.new(config_ro.sem_max)
       if not sem then
-        ngx.log(ngx.CRIT, "failed creating the PostgreSQL connector semaphore: ",
+        ngx.log(ngx.CRIT, "failed creating the PostgreSQL read-only connector semaphore: ",
                           err)
       end
     end
@@ -983,6 +1050,56 @@ function _M.new(kong_config)
     self.config_ro = config_ro
     self.sem_read = sem
   end
+
+  local mig_override = {
+      host        = kong_config.pg_migrations_host,
+      port        = kong_config.pg_migrations_port,
+      timeout     = kong_config.pg_migrations_timeout,
+      user        = kong_config.pg_migrations_user,
+      password    = kong_config.pg_migrations_password,
+      database    = kong_config.pg_migrations_database,
+      schema      = kong_config.pg_migrations_schema,
+      ssl         = kong_config.pg_migrations_ssl,
+      ssl_verify  = kong_config.pg_migrations_ssl_verify,
+      sem_max     = kong_config.pg_migrations_max_concurrent_queries or 1,
+      sem_timeout = kong_config.pg_migrations_semaphore_timeout and
+                   (kong_config.pg_migrations_semaphore_timeout / 1000) or nil,
+  }
+
+  local config_mig = utils.table_merge(config, mig_override)
+  local sem_migrations, err = semaphore.new(config_mig.sem_max)
+  if not sem_migrations then
+    ngx.log(ngx.CRIT, "failed creating the PostgreSQL migrations connector semaphore: ",
+                      err)
+  end
+
+  self.config_mig = config_mig
+  self.sem_migrations = sem_migrations
+
+  local adm_override = {
+      host        = kong_config.pg_admin_host,
+      port        = kong_config.pg_admin_port,
+      timeout     = kong_config.pg_admin_timeout,
+      user        = kong_config.pg_admin_user,
+      password    = kong_config.pg_admin_password,
+      database    = kong_config.pg_admin_database,
+      schema      = kong_config.pg_admin_schema,
+      ssl         = kong_config.pg_admin_ssl,
+      ssl_verify  = kong_config.pg_admin_ssl_verify,
+      sem_max     = kong_config.pg_admin_max_concurrent_queries,
+      sem_timeout = kong_config.pg_admin_semaphore_timeout and
+                   (kong_config.pg_admin_semaphore_timeout / 1000) or nil,
+  }
+
+  local config_adm = utils.table_merge(config, adm_override)
+  local sem_admin, err = semaphore.new(config_adm.sem_max)
+  if not sem_admin then
+    ngx.log(ngx.CRIT, "failed creating the PostgreSQL admin connector semaphore: ",
+                      err)
+  end
+
+  self.config_adm = config_adm
+  self.sem_admin = sem_admin
 
   return setmetatable(self, _mt)
 end

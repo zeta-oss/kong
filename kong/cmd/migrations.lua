@@ -92,6 +92,9 @@ local function execute(args)
   kong_global.init_pdk(_G.kong, conf, nil) -- nil: latest PDK
 
   local db = assert(DB.new(conf))
+
+  db.connector.migrating = true
+
   assert(db:init_connector())
 
   local schema_state = assert(db:schema_state())

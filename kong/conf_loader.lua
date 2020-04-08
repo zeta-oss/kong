@@ -329,6 +329,22 @@ local CONF_INFERENCES = {
   pg_ro_max_concurrent_queries = { typ = "number" },
   pg_ro_semaphore_timeout = { typ = "number" },
 
+  pg_admin_port = { typ = "number" },
+  pg_admin_timeout = { typ = "number" },
+  pg_admin_password = { typ = "string" },
+  pg_admin_ssl = { typ = "boolean" },
+  pg_admin_ssl_verify = { typ = "boolean" },
+  pg_admin_max_concurrent_queries = { typ = "number" },
+  pg_admin_semaphore_timeout = { typ = "number" },
+
+  pg_migrations_port = { typ = "number" },
+  pg_migrations_timeout = { typ = "number" },
+  pg_migrations_password = { typ = "string" },
+  pg_migrations_ssl = { typ = "boolean" },
+  pg_migrations_ssl_verify = { typ = "boolean" },
+  pg_migrations_max_concurrent_queries = { typ = "number" },
+  pg_migrations_semaphore_timeout = { typ = "number" },
+
   cassandra_contact_points = { typ = "array" },
   cassandra_port = { typ = "number" },
   cassandra_password = { typ = "string" },
@@ -500,6 +516,8 @@ local CONF_SENSITIVE_PLACEHOLDER = "******"
 local CONF_SENSITIVE = {
   pg_password = true,
   pg_ro_password = true,
+  pg_admin_password = true,
+  pg_migrations_password = true,
   cassandra_password = true,
 }
 
@@ -791,6 +809,46 @@ local function check_and_infer(conf, opts)
 
     if conf.pg_ro_semaphore_timeout ~= math.floor(conf.pg_ro_semaphore_timeout) then
       errors[#errors + 1] = "pg_ro_semaphore_timeout must be an integer greater than 0"
+    end
+  end
+
+  if conf.pg_admin_max_concurrent_queries then
+    if conf.pg_admin_max_concurrent_queries < 0 then
+      errors[#errors + 1] = "pg_admin_max_concurrent_queries must be greater than 0"
+    end
+
+    if conf.pg_admin_max_concurrent_queries ~= math.floor(conf.pg_admin_max_concurrent_queries) then
+      errors[#errors + 1] = "pg_admin_max_concurrent_queries must be an integer greater than 0"
+    end
+  end
+
+  if conf.pg_admin_semaphore_timeout then
+    if conf.pg_admin_semaphore_timeout < 0 then
+      errors[#errors + 1] = "pg_admin_semaphore_timeout must be greater than 0"
+    end
+
+    if conf.pg_admin_semaphore_timeout ~= math.floor(conf.pg_admin_semaphore_timeout) then
+      errors[#errors + 1] = "pg_admin_semaphore_timeout must be an integer greater than 0"
+    end
+  end
+
+  if conf.pg_migrations_max_concurrent_queries then
+    if conf.pg_migrations_max_concurrent_queries < 0 then
+      errors[#errors + 1] = "pg_migrations_max_concurrent_queries must be greater than 0"
+    end
+
+    if conf.pg_migrations_max_concurrent_queries ~= math.floor(conf.pg_migrations_max_concurrent_queries) then
+      errors[#errors + 1] = "pg_migrations_max_concurrent_queries must be an integer greater than 0"
+    end
+  end
+
+  if conf.pg_migrations_semaphore_timeout then
+    if conf.pg_migrations_semaphore_timeout < 0 then
+      errors[#errors + 1] = "pg_migrations_semaphore_timeout must be greater than 0"
+    end
+
+    if conf.pg_migrations_semaphore_timeout ~= math.floor(conf.pg_migrations_semaphore_timeout) then
+      errors[#errors + 1] = "pg_migrations_semaphore_timeout must be an integer greater than 0"
     end
   end
 

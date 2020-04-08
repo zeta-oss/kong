@@ -748,6 +748,7 @@
 
 #pg_user = kong                  # Postgres user.
 #pg_password =                   # Postgres user's password.
+
 #pg_database = kong              # The database name to connect to.
 
 #pg_schema =                     # The database schema to use. If unspecified,
@@ -822,6 +823,69 @@
 #pg_ro_semaphore_timeout = <pg_semaphore_timeout>
                                  # Same as `pg_semaphore_timeout`, but for the
                                  # read-only connection.
+
+#pg_admin_host = NONE            # Same as `pg_host`, but for the
+                                 # admin api connection.
+
+#pg_admin_port = <pg_port>       # Same as `pg_port`, but for the
+                                 # admin api connection.
+
+#pg_admin_timeout = <pg_timeout> # Same as `pg_timeout`, but for the
+                                 # admin api connection.
+
+#pg_admin_user = <pg_user>       # Same as `pg_user`, but for the
+                                 # admin api connection.
+
+#pg_admin_password = <pg_password>
+                                 # Same as `pg_password`, but for the
+                                 # admin api connection.
+
+#pg_admin_ssl = <pg_ssl>         # Same as `pg_ssl`, but for the
+                                 # admin api connection.
+
+#pg_admin_ssl_verify = <pg_ssl_verify>
+                                 # Same as `pg_ssl_verify`, but for the
+                                 # admin api connection.
+
+#pg_admin_max_concurrent_queries = <pg_max_concurrent_queries>
+                                 # Same as `pg_max_concurrent_queries`, but for
+                                 # the admin api connection.
+
+#pg_admin_semaphore_timeout = <pg_semaphore_timeout>
+                                 # Same as `pg_semaphore_timeout`, but for the
+                                 # admin api connection.
+
+#pg_migrations_host = NONE       # Same as `pg_host`, but for the
+                                 # migrations connection.
+
+#pg_migrations_port = <pg_port>  # Same as `pg_port`, but for the
+                                 # migrations connection.
+
+#pg_migrations_timeout = <pg_timeout>
+                                 # Same as `pg_timeout`, but for the
+                                 # migrations connection.
+
+#pg_migrations_user = <pg_user>  # Same as `pg_user`, but for the
+                                 # migrations connection.
+
+#pg_migrations_password = <pg_password>
+                                 # Same as `pg_password`, but for the
+                                 # migrations connection.
+
+#pg_migrations_ssl = <pg_ssl>    # Same as `pg_ssl`, but for the
+                                 # migrations connection.
+
+#pg_migrations_ssl_verify = <pg_ssl_verify>
+                                 # Same as `pg_ssl_verify`, but for the
+                                 # migrations connection.
+
+#pg_migrations_max_concurrent_queries = 1
+                                 # Same as `pg_max_concurrent_queries`, but for
+                                 # the migrations connection.
+
+#pg_migrations_semaphore_timeout = <pg_semaphore_timeout>
+                                 # Same as `pg_semaphore_timeout`, but for the
+                                 # migrations connection.
 
 #cassandra_contact_points = 127.0.0.1  # A comma-separated list of contact
                                        # points to your cluster.

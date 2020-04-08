@@ -107,6 +107,30 @@ pg_ro_ssl_verify = NONE
 pg_ro_max_concurrent_queries = NONE
 pg_ro_semaphore_timeout = NONE
 
+pg_admin_host = NONE
+pg_admin_port = NONE
+pg_admin_database = NONE
+pg_admin_schema = NONE
+pg_admin_timeout = NONE
+pg_admin_user = NONE
+pg_admin_password = NONE
+pg_admin_ssl = NONE
+pg_admin_ssl_verify = NONE
+pg_admin_max_concurrent_queries = NONE
+pg_admin_semaphore_timeout = NONE
+
+pg_migrations_host = NONE
+pg_migrations_port = NONE
+pg_migrations_database = NONE
+pg_migrations_schema = NONE
+pg_migrations_timeout = NONE
+pg_migrations_user = NONE
+pg_migrations_password = NONE
+pg_migrations_ssl = NONE
+pg_migrations_ssl_verify = NONE
+pg_migrations_max_concurrent_queries = 1
+pg_migrations_semaphore_timeout = NONE
+
 cassandra_contact_points = 127.0.0.1
 cassandra_port = 9042
 cassandra_keyspace = kong
