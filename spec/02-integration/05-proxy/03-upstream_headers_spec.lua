@@ -910,5 +910,112 @@ for _, strategy in helpers.each_strategy() do
         end)
       end)
     end)
+
+    describe("Host", function()
+      strict_setup(function()
+        --local http_cmd = "resty --errlog-level error " ..
+        --                 "spec/fixtures/balancer_https_server.lua http " ..
+        --                 "localhost 9667 \"[10]\" false false &"
+        --os.execute(http_cmd)
+
+        bp, db = helpers.get_db_utils(strategy, {
+          "routes",
+          "services",
+        })
+
+        start_kong({
+          database         = strategy,
+          nginx_conf       = "spec/fixtures/custom_nginx.template",
+          lua_package_path = "?/init.lua;./kong/?.lua;./spec/fixtures/?.lua",
+        })()
+
+        --ngx.sleep(0.5) -- wait for http server
+        --helpers.http_client("localhost", 9667):send{ method = "GET", path = "/handshake"}
+      end)
+
+      strict_teardown(function()
+        --helpers.http_client("localhost", 9667):send{ method = "GET", path = "/shutdown"}
+        stop_kong()
+      end)
+
+      it("#only should be updated on target error", function()
+        --os.execute("timeout 0.2 nc -l localhost 9666 &")
+
+        local admin_client = helpers.admin_client()
+        local admin_res = admin_client:post("/upstreams", {
+          headers = {
+            ["Content-Type"] = "application/json",
+          },
+          body = {
+            name = "anothertestupstream",
+          }
+        })
+        assert.res_status(201, admin_res)
+
+        admin_res = admin_client:post("/upstreams/anothertestupstream/targets", {
+          headers = {
+            ["Content-Type"] = "application/json",
+          },
+          body = {
+            target = "localhost:9666",
+          }
+        })
+        assert.res_status(201, admin_res)
+
+        admin_res = admin_client:post("/upstreams/anothertestupstream/targets", {
+          headers = {
+            ["Content-Type"] = "application/json",
+          },
+          body = {
+            target = "localhost:9667",
+          }
+        })
+        assert.res_status(201, admin_res)
+
+        admin_res = admin_client:post("/services", {
+          headers = {
+            ["Content-Type"] = "application/json",
+          },
+          body = {
+            name = "anothertestservice",
+            host = "anothertestupstream",
+            path = "/results",
+            port = 80,
+            retries = 5,
+            connect_timeout=100,
+            read_timeout=100,
+          }
+        })
+        assert.res_status(201, admin_res)
+
+        admin_res = admin_client:post("/services/anothertestservice/routes", {
+          headers = {
+            ["Content-Type"] = "application/json",
+          },
+          body = {
+            name = "anothertestroute",
+            hosts = { "a.host.test" },
+          }
+        })
+        assert.res_status(201, admin_res)
+        --print("go")
+        --ngx.sleep(120)
+
+        local res = assert(proxy_client:send {
+          method  = "GET",
+          path    = "/",
+          headers = { ["Host"] = "a.host.test" },
+        })
+
+        local json = assert.res_status(200, res)
+
+        local h = cjson.decode(json).headers
+        print("headers: ", require'inspect'(h))
+        --print("headers: ", require'inspect'(json))
+        --local c = cjson.decode(json)
+        --print("c: ", require'inspect'(c))
+
+      end)
+    end)
   end)
 end

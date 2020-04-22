@@ -12,6 +12,7 @@ local log = ngx.log
 local sleep = ngx.sleep
 local min = math.min
 local max = math.max
+local var = ngx.var
 
 local CRIT  = ngx.CRIT
 local ERR   = ngx.ERR
@@ -167,6 +168,7 @@ local function apply_history(rb, history, start)
     local target = history[i]
 
     if target.weight > 0 then
+      rb.useSRVname = true
       assert(rb:addHost(target.name, target.port, target.weight))
     else
       assert(rb:removeHost(target.name, target.port))
@@ -1121,6 +1123,25 @@ local function get_balancer_health(upstream_id)
 end
 
 
+local function set_host_header(balancer_data)
+  -- set the upstream host header if not `preserve_host`
+  local upstream_host = var.upstream_host
+
+  if not upstream_host or upstream_host == "" then
+    upstream_host = balancer_data.hostname
+
+    local upstream_scheme = var.upstream_scheme
+    if upstream_scheme == "http"  and balancer_data.port ~= 80 or
+        upstream_scheme == "https" and balancer_data.port ~= 443
+    then
+      upstream_host = upstream_host .. ":" .. balancer_data.port
+    end
+
+    var.upstream_host = upstream_host
+    ngx.req.set_header("Host", upstream_host)
+  end
+end
+
 --------------------------------------------------------------------------------
 -- for unit-testing purposes only
 local function _get_healthchecker(balancer)
@@ -1148,6 +1169,7 @@ return {
   get_upstream_health = get_upstream_health,
   get_upstream_by_id = get_upstream_by_id,
   get_balancer_health = get_balancer_health,
+  set_host_header = set_host_header,
 
   -- ones below are exported for test purposes only
   _create_balancer = create_balancer,

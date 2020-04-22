@@ -11,6 +11,7 @@ local singletons   = require "kong.singletons"
 local certificate  = require "kong.runloop.certificate"
 local concurrency  = require "kong.concurrency"
 local PluginsIterator = require "kong.runloop.plugins_iterator"
+local kong_balancer   = require "resty.kong.balancer"
 
 
 local kong         = kong
@@ -34,6 +35,8 @@ local timer_every  = ngx.timer.every
 local subsystem    = ngx.config.subsystem
 local clear_header = ngx.req.clear_header
 local unpack       = unpack
+local get_phase    = ngx.get_phase
+
 
 
 local ERR   = ngx.ERR
@@ -825,6 +828,9 @@ local function balancer_execute(ctx)
     err = "failed the initial dns/balancer resolve for '" ..
           balancer_data.host .. "' with: " .. tostring(err)
   end
+  if get_phase() == "balancer" then
+    kong_balancer.update_host_header()
+  end
   return ok, err, errcode
 end
 
@@ -1171,23 +1177,7 @@ return {
 
       var.upstream_scheme = balancer_data.scheme
 
-      do
-        -- set the upstream host header if not `preserve_host`
-        local upstream_host = var.upstream_host
-
-        if not upstream_host or upstream_host == "" then
-          upstream_host = balancer_data.hostname
-
-          local upstream_scheme = var.upstream_scheme
-          if upstream_scheme == "http"  and balancer_data.port ~= 80 or
-             upstream_scheme == "https" and balancer_data.port ~= 443
-          then
-            upstream_host = upstream_host .. ":" .. balancer_data.port
-          end
-
-          var.upstream_host = upstream_host
-        end
-      end
+      balancer.set_host_header(balancer_data)
 
       -- clear hop-by-hop request headers:
       for _, header_name in csv(var.http_connection) do
