@@ -234,6 +234,8 @@ local function truncate_tables(db, tables)
 end
 
 local function bootstrap_database(db)
+  db.connector.migrating = true
+
   local schema_state = assert(db:schema_state())
   if schema_state.needs_bootstrap then
     assert(db:schema_bootstrap())
@@ -245,6 +247,8 @@ local function bootstrap_database(db)
       run_teardown = true,
     }))
   end
+
+  db.connector.migrating = nil
 end
 
 --- Gets the database utility helpers and prepares the database for a testrun.

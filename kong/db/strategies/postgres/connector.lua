@@ -131,7 +131,7 @@ local function get_operation(self, operation)
           tostring(operation), 3)
   end
 
-  if self.migrating or operation == "migrations" then
+  if operation == "migrations" or self.migrating then
     return "migrations"
   end
 
@@ -162,7 +162,6 @@ local function get_config(self, operation)
     return self.config_adm
 
   elseif operation == "migrations" then
-
     return self.config_mig
   end
 
@@ -447,12 +446,6 @@ end
 function _mt:connect(operation)
   operation = get_operation(self, operation)
 
-  if operation == "migrations" then
-    self.migrating = true
-  else
-    self.migrating = nil
-  end
-
   local conn = self:get_stored_connection(operation)
   if conn then
     return conn
@@ -470,7 +463,7 @@ end
 
 
 function _mt:connect_migrations()
-  return self:connect("migrations")
+  return self:connect()
 end
 
 
@@ -812,7 +805,7 @@ end
 
 
 function _mt:schema_bootstrap(kong_config, default_locks_ttl)
-  local conn = self:get_stored_connection("migrations")
+  local conn = self:get_stored_connection()
   if not conn then
     error("no connection")
   end
@@ -876,7 +869,7 @@ end
 
 
 function _mt:schema_reset()
-  local conn = self:get_stored_connection("migrations")
+  local conn = self:get_stored_connection()
   if not conn then
     error("no connection")
   end
@@ -894,7 +887,7 @@ function _mt:run_up_migration(name, up_sql)
     error("up_sql must be a string", 2)
   end
 
-  local conn = self:get_stored_connection("migrations")
+  local conn = self:get_stored_connection()
   if not conn then
     error("no connection")
   end
@@ -929,7 +922,7 @@ function _mt:record_migration(subsystem, name, state)
     error("name must be a string", 2)
   end
 
-  local conn = self:get_stored_connection("migrations")
+  local conn = self:get_stored_connection()
   if not conn then
     error("no connection")
   end
