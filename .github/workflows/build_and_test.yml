@@ -14,6 +14,7 @@ jobs:
           echo "::set-env name=KONG_BUILD_TOOLS_LOCATION::$HOME/kong-build-tools"
         
     - uses: azure/docker-login@v1
+      if: github.repository_owner == 'kong'
       with:
         username: ${{ secrets.KONG_USERNAME }}
         password: ${{ secrets.KONG_PASSWORD }}
@@ -42,6 +43,7 @@ jobs:
           echo "::set-env name=KONG_BUILD_TOOLS_LOCATION::$HOME/kong-build-tools"
         
     - uses: azure/docker-login@v1
+      if: github.repository_owner == 'kong'
       with:
         username: ${{ secrets.KONG_USERNAME }}
         password: ${{ secrets.KONG_PASSWORD }}
@@ -71,6 +73,7 @@ jobs:
           echo "::set-env name=KONG_BUILD_TOOLS_LOCATION::$HOME/kong-build-tools"
         
     - uses: azure/docker-login@v1
+      if: github.repository_owner == 'kong'
       with:
         username: ${{ secrets.KONG_USERNAME }}
         password: ${{ secrets.KONG_PASSWORD }}
@@ -100,6 +103,7 @@ jobs:
           echo "::set-env name=KONG_BUILD_TOOLS_LOCATION::$HOME/kong-build-tools"
         
     - uses: azure/docker-login@v1
+      if: github.repository_owner == 'kong'
       with:
         username: ${{ secrets.KONG_USERNAME }}
         password: ${{ secrets.KONG_PASSWORD }}
@@ -143,6 +147,7 @@ jobs:
           echo "::set-env name=KONG_BUILD_TOOLS_LOCATION::$HOME/kong-build-tools"
         
     - uses: azure/docker-login@v1
+      if: github.repository_owner == 'kong'
       with:
         username: ${{ secrets.KONG_USERNAME }}
         password: ${{ secrets.KONG_PASSWORD }}
