@@ -960,6 +960,31 @@ local function init()
 
 end
 
+local function init_targets()
+  local upstreams = get_all_upstreams()
+  for ws_and_name, id in pairs(upstreams) do
+    local name = sub(ws_and_name, (find(ws_and_name, ":", 1, true)))
+
+    local upstream = get_upstream_by_id(id)
+    if not upstream then
+      log(ERR, "target init: upstream not found for ", id)
+      return
+    end
+
+    local balancer = balancers[id]
+    if not balancer then
+      log(ERR, "target init: balancer not found for ", name)
+      return
+    end
+
+    local ok, err = check_target_history(upstream, balancer)
+    if not ok then
+      log(ERR, "failed checking target history for ", name, ":  ", err)
+    end
+
+  end
+end
+
 
 local function do_upstream_event(operation, upstream_id, upstream_name)
   if operation == "create" then
@@ -1377,6 +1402,7 @@ end
 
 return {
   init = init,
+  init_targets = init_targets,
   execute = execute,
   on_target_event = on_target_event,
   on_upstream_event = on_upstream_event,
