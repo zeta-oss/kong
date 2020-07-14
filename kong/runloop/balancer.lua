@@ -836,7 +836,7 @@ do
 
     local oks, errs = 0, 0
     for ws_and_name, id in pairs(upstreams) do
-      local name = sub(ws_and_name, (find(ws_and_name, ":", 1, true)))
+      local name = sub(ws_and_name, (find(ws_and_name, ":", 1, true)) + 1)
 
       local upstream = get_upstream_by_id(id)
       local ok, err
@@ -852,27 +852,35 @@ do
     end
     log(DEBUG, "initialized ", oks, " balancer(s), ", errs, " error(s)")
 
-    set_worker_state_updated()
+    if kong.db.strategy ~= "off" then
+      set_worker_state_updated()
+    end
   end
 
   is_worker_state_stale = function()
-    local current_version = kong.core_cache:get(worker_state_VERSION, TTL_ZERO, utils.uuid)
-    if current_version ~= worker_state_version then
-      return true
+    if kong.db.strategy ~= "off" then
+      local current_version = kong.core_cache:get(worker_state_VERSION, TTL_ZERO, utils.uuid)
+      if current_version ~= worker_state_version then
+        return true
+      end
     end
 
     return false
   end
 
   set_worker_state_stale = function()
-    log(DEBUG, "invalidating proxy state")
-    kong.core_cache:invalidate(worker_state_VERSION)
+    if kong.db.strategy ~= "off" then
+      log(DEBUG, "invalidating proxy state")
+      kong.core_cache:invalidate(worker_state_VERSION)
+    end
   end
 
 
   set_worker_state_updated = function()
-    worker_state_version = kong.core_cache:get(worker_state_VERSION, TTL_ZERO, utils.uuid)
-    log(DEBUG, "proxy state is updated")
+    if kong.db.strategy ~= "off" then
+      worker_state_version = kong.core_cache:get(worker_state_VERSION, TTL_ZERO, utils.uuid)
+      log(DEBUG, "proxy state is updated")
+    end
   end
 
 end
@@ -965,7 +973,7 @@ end
 local function init_targets()
   local upstreams = get_all_upstreams()
   for ws_and_name, id in pairs(upstreams) do
-    local name = sub(ws_and_name, (find(ws_and_name, ":", 1, true)))
+    local name = sub(ws_and_name, (find(ws_and_name, ":", 1, true)) + 1)
 
     local upstream = get_upstream_by_id(id)
     if not upstream then
