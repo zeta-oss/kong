@@ -442,6 +442,7 @@ local function register_events()
         rebuild_router(ROUTER_SYNC_OPTS)
 
         balancer.init()
+        balancer.init_targets()
 
         return true
       end)
