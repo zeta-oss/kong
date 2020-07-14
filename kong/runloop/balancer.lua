@@ -139,7 +139,7 @@ _load_upstream_into_memory = load_upstream_into_memory
 local function get_upstream_by_id(upstream_id)
   local upstream_cache_key = "balancer:upstreams:" .. upstream_id
 
-  if kong.configuration.worker_consistency == "eventual" then
+  if kong.configuration.worker_consistency == "eventual" and kong.db.strategy ~= "off" then
     return singletons.core_cache:get(upstream_cache_key, nil, noop)
   end
 
@@ -535,7 +535,7 @@ do
 
     local balancer, err = create_balancer_exclusive(upstream, history, start)
 
-    if kong.configuration.worker_consistency == "eventual" then
+    if kong.configuration.worker_consistency == "eventual" and kong.db.strategy ~= "off" then
       local _, err = singletons.core_cache:get(
         "balancer:upstreams:" .. upstream.id,
         { neg_ttl = 10 },
@@ -646,7 +646,7 @@ local opts = { neg_ttl = 10 }
 -- @return The upstreams dictionary (a map with upstream names as string keys
 -- and upstream entity tables as values), or nil+error
 local function get_all_upstreams()
-  if kong.configuration.worker_consistency == "eventual" then
+  if kong.configuration.worker_consistency == "eventual" and kong.db.strategy ~= "off" then
     return singletons.core_cache:get("balancer:upstreams", opts, noop)
   end
   local upstreams_dict, err = singletons.core_cache:get("balancer:upstreams", opts,
@@ -909,17 +909,19 @@ local function update_balancer_state(premature)
     end
   end)
 
-  local frequency = kong.configuration.worker_state_update_frequency or 1
-  local _, err = timer_at(frequency, update_balancer_state)
-  if err then
-    log(CRIT, "unable to reschedule update proxy state timer: ", err)
+  if kong.db.strategy ~= "off" then
+    local frequency = kong.configuration.worker_state_update_frequency or 1
+    local _, err = timer_at(frequency, update_balancer_state)
+    if err then
+      log(CRIT, "unable to reschedule update proxy state timer: ", err)
+    end
   end
 
 end
 
 
 local function init()
-  if kong.configuration.worker_consistency == "eventual" then
+  if kong.configuration.worker_consistency == "eventual" and kong.db.strategy ~= "off" then
     local opts = { neg_ttl = 10 }
     local upstreams_dict, err = singletons.core_cache:get("balancer:upstreams",
                                         opts, load_upstreams_dict_into_memory)
@@ -948,7 +950,7 @@ local function init()
 
   create_balancers()
 
-  if kong.configuration.worker_consistency == "eventual" then
+  if kong.configuration.worker_consistency == "eventual" and kong.db.strategy ~= "off" then
     local frequency = kong.configuration.worker_state_update_frequency or 1
     local _, err = timer_at(frequency, update_balancer_state)
     if err then
@@ -989,7 +991,7 @@ end
 local function do_upstream_event(operation, upstream_id, upstream_name)
   if operation == "create" then
     local upstream
-    if kong.configuration.worker_consistency == "eventual" then
+    if kong.configuration.worker_consistency == "eventual" and kong.db.strategy ~= "off" then
       set_worker_state_stale()
       local upstream_cache_key = "balancer:upstreams:" .. upstream_id
       singletons.core_cache:invalidate_local(upstream_cache_key)
@@ -1015,7 +1017,7 @@ local function do_upstream_event(operation, upstream_id, upstream_name)
     local upstream_cache_key = "balancer:upstreams:" .. upstream_id
     local target_cache_key = "balancer:targets:"   .. upstream_id
     if singletons.db.strategy ~= "off" then
-      if kong.configuration.worker_consistency == "eventual" then
+      if kong.configuration.worker_consistency == "eventual" and kong.db.strategy ~= "off"  then
         set_worker_state_stale()
       else
         singletons.core_cache:invalidate_local("balancer:upstreams")
@@ -1035,7 +1037,7 @@ local function do_upstream_event(operation, upstream_id, upstream_name)
 
     else
       local upstream
-      if kong.configuration.worker_consistency == "eventual" then
+      if kong.configuration.worker_consistency == "eventual" and kong.db.strategy ~= "off" then
         -- force loading the upstream to the cache
         upstream = singletons.core_cache:get(upstream_cache_key, nil,
                                   load_upstream_into_memory, upstream_id)
