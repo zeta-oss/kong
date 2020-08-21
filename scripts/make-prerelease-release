@@ -6,7 +6,7 @@ cyan="\033[0;36m"
 bold="\033[1m"
 nocolor="\033[0m"
 
-source $(dirname "$0")/common.sh
+source $(dirname "$0")/release-common.sh
 
 #-------------------------------------------------------------------------------
 function usage() {
