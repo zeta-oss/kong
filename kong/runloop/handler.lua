@@ -1074,6 +1074,23 @@ return {
         local body = utils.get_default_exit_body(errcode, err)
         return kong.response.exit(errcode, body)
       end
+
+      local balancer_data = ctx.balancer_data
+      if balancer_data
+         and not (ctx.service and ctx.service.client_certificate)
+      then
+        local upstream = balancer_data.upstream
+        if upstream then
+          local client_certificate =
+            upstream.client_certificate
+          if client_certificate then
+            local ok, err = set_service_tls_cert_key(client_certificate)
+            if not ok then
+              log(ERR, err)
+            end
+          end
+        end
+      end
     end
   },
   certificate = {

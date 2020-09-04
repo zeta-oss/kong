@@ -1111,6 +1111,7 @@ local function execute(target, ctx)
     hostname = hostname or ip
     target.hash_value = hash_value
     target.balancer_handle = handle
+    target.upstream = upstream
 
   else
     -- have to do a regular DNS lookup
