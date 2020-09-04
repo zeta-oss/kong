@@ -785,12 +785,31 @@ do
 end
 
 
-local balancer_prepare
+local set_service_tls_cert_key
 do
   local get_certificate = certificate.get_certificate
-  local get_ca_certificate_store = certificate.get_ca_certificate_store
-  local subsystem = ngx.config.subsystem
+  function set_service_tls_cert_key(client_certificate)
+    local cert, err = get_certificate(client_certificate)
+    if not cert then
+      return nil,
+             fmt("unable to fetch upstream client TLS certificate %s: %s",
+                 client_certificate.id, err)
+    end
 
+    local res, err = kong.service.set_tls_cert_key(cert.cert, cert.key)
+    if not res then
+      log(ERR, "unable to apply upstream client TLS certificate ",
+               client_certificate.id, ": ", err)
+    end
+
+    return true
+  end
+end
+
+
+local balancer_prepare
+do
+  local get_ca_certificate_store = certificate.get_ca_certificate_store
   function balancer_prepare(ctx, scheme, host_type, host, port,
                             service, route)
     local balancer_data = {
@@ -826,17 +845,10 @@ do
       local client_certificate = service.client_certificate
 
       if client_certificate then
-        local cert, err = get_certificate(client_certificate)
-        if not cert then
-          log(ERR, "unable to fetch upstream client TLS certificate ",
-                   client_certificate.id, ": ", err)
-          return
-        end
-
-        res, err = kong.service.set_tls_cert_key(cert.cert, cert.key)
+        res, err = set_service_tls_cert_key(client_certificate)
         if not res then
-          log(ERR, "unable to apply upstream client TLS certificate ",
-                   client_certificate.id, ": ", err)
+          log(ERR, err)
+          return
         end
       end
 
