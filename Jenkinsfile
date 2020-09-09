@@ -10,6 +10,8 @@ pipeline {
         DOCKER_USERNAME = "${env.DOCKER_CREDENTIALS_USR}"
         DOCKER_PASSWORD = "${env.DOCKER_CREDENTIALS_PSW}"
         KONG_PACKAGE_NAME = "kong"
+        USER = 'jenkins-kong'
+        DOCKER_CLI_EXPERIMENTAL = "enabled"
     }
     stages {
         stage('Build Kong') {
@@ -146,6 +148,8 @@ pipeline {
                 KONG_BUILD_TOOLS_LOCATION = "${env.WORKSPACE}/../kong-build-tools"
                 BINTRAY_USR = 'kong-inc_travis-ci@kong'
                 BINTRAY_KEY = credentials('bintray_travis_key')
+                AWS_ACCESS_KEY = credentials('AWS_ACCESS_KEY')
+                AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
                 DEBUG = 0
             }
             steps {
@@ -175,7 +179,6 @@ pipeline {
                         RESTY_IMAGE_TAG = 'xenial'
                         CACHE = 'false'
                         UPDATE_CACHE = 'true'
-                        USER = 'travis'
                         KONG_SOURCE_LOCATION = "${env.WORKSPACE}"
                         KONG_BUILD_TOOLS_LOCATION = "${env.WORKSPACE}/../kong-build-tools"
                         BINTRAY_USR = 'kong-inc_travis-ci@kong'
