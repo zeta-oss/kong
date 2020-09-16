@@ -4,6 +4,7 @@ local workspaces = require "kong.workspaces"
 local utils = require "kong.tools.utils"
 local hooks = require "kong.hooks"
 local get_certificate = require("kong.runloop.certificate").get_certificate
+local service_discovery = require "kong.service_discovery"
 
 
 -- due to startup/require order, cannot use the ones from 'kong' here
@@ -177,6 +178,13 @@ _load_targets_into_memory = load_targets_into_memory
 -- @return The target history array, with target entity tables.
 local function fetch_target_history(upstream)
   local targets_cache_key = "balancer:targets:" .. upstream.id
+
+  print"FETCH_TARGET_HISTORY"
+  if upstream.service_discovery then
+    print"LOADING TARGETS"
+    return singletons.core_cache:get(targets_cache_key, nil,
+                                service_discovery.load_targets, upstream)
+  end
 
   return singletons.core_cache:get(targets_cache_key, nil,
                               load_targets_into_memory, upstream.id)
@@ -488,6 +496,8 @@ do
       start = 1
     end
 
+    print("APPLY HISTORY")
+    print(require"inspect"(history))
     apply_history(balancer, history, start)
 
     upstream_ids[balancer] = upstream.id
@@ -925,6 +935,8 @@ local function init()
       return
     end
 
+    service_discovery.init()
+
     for _, id in pairs(upstreams_dict) do
       local upstream_cache_key = "balancer:upstreams:" .. id
       local upstream, err = singletons.core_cache:get(upstream_cache_key, opts,
@@ -934,10 +946,18 @@ local function init()
         log(WARN, "failed loading upstream ", id, ": ", err)
       end
 
-      local target_cache_key = "balancer:targets:" .. id
-      local target, err = singletons.core_cache:get(target_cache_key, opts,
-                load_targets_into_memory, id)
-      if target == nil or err then
+      local targets_cache_key = "balancer:targets:" .. id
+      local targets
+      if upstream.service_discovery then
+        targets, err = singletons.core_cache:get(targets_cache_key, nil,
+                                                 service_discovery.load_targets,
+                                                 upstream)
+      else
+        targets, err = singletons.core_cache:get(targets_cache_key,opts,
+                                                 load_targets_into_memory, id)
+      end
+
+      if targets == nil or err then
         log(WARN, "failed loading targets for upstream ", id, ": ", err)
       end
     end
@@ -978,6 +998,10 @@ local function do_upstream_event(operation, upstream_id, upstream_name)
       return
     end
 
+    if upstream.service_discovery then
+      service_discovery.on_upstream_event("create", upstream)
+    end
+
     local _, err = create_balancer(upstream)
     if err then
       log(CRIT, "failed creating balancer for ", upstream_name, ": ", err)
@@ -1005,6 +1029,10 @@ local function do_upstream_event(operation, upstream_id, upstream_name)
     if operation == "delete" then
       set_balancer(upstream_id, nil)
 
+     if upstream.service_discovery then
+       service_discovery.on_upstream_event("delete", { id = upstream_id })
+     end
+
     else
       local upstream
       if kong.configuration.worker_consistency == "eventual" then
@@ -1018,6 +1046,10 @@ local function do_upstream_event(operation, upstream_id, upstream_name)
       if not upstream then
         log(ERR, "upstream not found for ", upstream_id)
         return
+      end
+
+      if upstream.service_discovery then
+        service_discovery.on_upstream_event(operation, upstream)
       end
 
       local _, err = create_balancer(upstream, true)

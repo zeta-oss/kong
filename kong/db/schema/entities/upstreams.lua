@@ -181,6 +181,14 @@ local r =  {
     }, },
     { tags = typedefs.tags },
     { host_header = typedefs.host_with_optional_port },
+    { service_discovery = { type = "record",
+        required = false,
+        fields = {
+          { format = { type = "string", required = true, one_of = { "consul" } } },
+          { url = typedefs.url { required = true } },
+          { timeout = typedefs.timeout { default = 60000 } },
+        }
+    } },
     { client_certificate = { type = "foreign", reference = "certificates" }, },
   },
   entity_checks = {

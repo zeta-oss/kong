@@ -155,10 +155,50 @@ return {
   },
 
   ["/upstreams/:upstreams/targets"] = {
-    GET = endpoints.get_collection_endpoint(kong.db.targets.schema,
-                                            kong.db.upstreams.schema,
-                                            "upstream",
-                                            "page_for_upstream"),
+    GET = function(self, db)
+      local node_id, err = kong.node.get_id()
+      if err then
+        kong.log.err("failed to get node id: ", err)
+      end
+
+      local upstream, _, err_t = endpoints.select_entity(self, db, db.upstreams.schema)
+      if err_t then
+        return endpoints.handle_error(err_t)
+      end
+
+      if not upstream then
+        return kong.response.exit(404, { message = "Not found" })
+      end
+
+      if upstream.service_discovery then
+        local targets = kong.core_cache:get("balancer:targets:" .. upstream.id,
+        nil, function() end)
+
+        return kong.response.exit(200, {
+          data    = targets,
+          node_id = node_id,
+        })
+      end
+
+      self.params.targets = db.upstreams.schema:extract_pk_values(upstream)
+      local targets, _, err_t, offset =
+      endpoints.page_collection(self, db, db.targets.schema, "page_for_upstream")
+
+      if err_t then
+        return endpoints.handle_error(err_t)
+      end
+
+      local next_page = offset and fmt("/upstreams/%s/health?offset=%s",
+      self.params.upstreams,
+      escape_uri(offset)) or null
+
+      return kong.response.exit(200, {
+        data    = targets,
+        offset  = offset,
+        next    = next_page,
+        node_id = node_id,
+      })
+    end
   },
 
   ["/upstreams/:upstreams/targets/all"] = {

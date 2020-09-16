@@ -8,6 +8,17 @@ return {
         last_seen      TIMESTAMP WITH TIME ZONE DEFAULT (CURRENT_TIMESTAMP(0) AT TIME ZONE 'UTC'),
         config_hash    TEXT NOT NULL
       );
+
+
+
+
+      DO $$
+      BEGIN
+        ALTER TABLE IF EXISTS ONLY "upstreams" ADD "service_discovery" JSONB;
+      EXCEPTION WHEN DUPLICATE_COLUMN THEN
+        -- Do nothing
+      END;
+      $$;
     ]],
   },
   cassandra = {
@@ -20,6 +31,10 @@ return {
         config_hash text,
         PRIMARY KEY (id)
       );
+
+
+
+      ALTER TABLE upstreams ADD service_discovery text;
     ]],
   }
 }
