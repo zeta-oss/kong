@@ -516,6 +516,9 @@ for _, consistency in ipairs({"strict", "eventual"}) do
           })
           balancer.on_target_event("create", { upstream = { id = "otee" } })
 
+          -- wait for worker_consistency timer to run
+          ngx.sleep(0.1)
+
           local b2 = balancer._create_balancer(upstream_otee)
           assert.same(2, #(balancer._get_target_history(b2)))
 

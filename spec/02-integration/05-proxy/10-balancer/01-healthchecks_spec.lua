@@ -817,7 +817,7 @@ for _, strategy in helpers.each_strategy() do
                 bu.end_testcase_setup(strategy, bp, consistency)
 
                 -- rename upstream
-                local new_name = upstream_id .. "_new"
+                local new_name = upstream_name .. "_new"
                 bu.patch_upstream(upstream_id, {
                   name = new_name
                 })

@@ -27,6 +27,7 @@ local tostring = tostring
 local tonumber = tonumber
 local assert = assert
 local table = table
+local table_remove = table.remove
 local timer_at = ngx.timer.at
 local run_hook = hooks.run_hook
 
@@ -34,12 +35,14 @@ local run_hook = hooks.run_hook
 local CRIT = ngx.CRIT
 local ERR = ngx.ERR
 local WARN = ngx.WARN
+local NOTICE = ngx.NOTICE
 local DEBUG = ngx.DEBUG
 local EMPTY_T = pl_tablex.readonly {}
-local worker_state_VERSION = "proxy-state:version"
-local TTL_ZERO = { ttl = 0 }
 local GLOBAL_QUERY_OPTS = { workspace = null, show_ws_id = true }
 
+-- FIFO queue of events for the eventual worker consistency
+local upstream_events_queue = {}
+local target_events_queue = {}
 
 -- for unit-testing purposes only
 local _load_upstreams_dict_into_memory
@@ -61,6 +64,7 @@ local healthcheckers = {}
 local healthchecker_callbacks = {}
 local target_histories = {}
 local upstream_ids = {}
+local upstream_by_name = {}
 
 
 -- health check API callbacks to be called on healthcheck events
@@ -87,9 +91,7 @@ local noop = function() end
 
 -- functions forward-declarations
 local create_balancers
-local is_worker_state_stale
-local set_worker_state_stale
-local set_worker_state_updated
+
 
 local function set_balancer(upstream_id, balancer)
   local prev = balancers[upstream_id]
@@ -135,10 +137,6 @@ _load_upstream_into_memory = load_upstream_into_memory
 
 local function get_upstream_by_id(upstream_id)
   local upstream_cache_key = "balancer:upstreams:" .. upstream_id
-
-  if kong.configuration.worker_consistency == "eventual" then
-    return singletons.core_cache:get(upstream_cache_key, nil, noop)
-  end
 
   return singletons.core_cache:get(upstream_cache_key, nil,
                                    load_upstream_into_memory, upstream_id)
@@ -634,6 +632,35 @@ end
 _load_upstreams_dict_into_memory = load_upstreams_dict_into_memory
 
 
+local function set_upstream_events_queue(operation, upstream_data, workspaces)
+  -- insert the new event into the end of the queue
+  upstream_events_queue[#upstream_events_queue + 1] = {
+    operation = operation,
+    upstream_data = upstream_data,
+    workspaces = workspaces,
+  }
+end
+
+
+local function get_upstream_events_queue()
+  return utils.deep_copy(upstream_events_queue)
+end
+
+
+local function set_target_events_queue(operation, target)
+  -- insert the new event into the end of the queue
+  target_events_queue[#target_events_queue + 1] = {
+    operation = operation,
+    target_data = target,
+  }
+end
+
+
+local function get_target_events_queue()
+  return utils.deep_copy(target_events_queue)
+end
+
+
 local opts = { neg_ttl = 10 }
 
 
@@ -656,6 +683,75 @@ local function get_all_upstreams()
 end
 
 
+local function do_upstream_event(operation, upstream_data, workspaces)
+  local ws_id = workspaces and workspaces[1]
+  local upstream_id = upstream_data.id
+  local upstream_name = upstream_data.name
+  local upstream_by_name_key = ws_id .. ":" .. upstream_name
+
+  singletons.core_cache:invalidate_local("balancer:upstreams:" .. upstream_id)
+
+  if operation == "create" then
+    singletons.core_cache:invalidate_local("balancer:upstreams:" .. ws_id)
+    local upstream, err = get_upstream_by_id(upstream_id)
+
+    if err then
+      return nil, err
+    end
+
+    if not upstream then
+      log(ERR, "upstream not found for ", upstream_id)
+      return
+    end
+
+    local _, err = create_balancer(upstream)
+    if err then
+      log(CRIT, "failed creating balancer for ", upstream_name, ": ", err)
+    end
+
+    upstream_by_name[upstream_by_name_key] = upstream
+
+  elseif operation == "delete" or operation == "update" then
+    local target_cache_key = "balancer:targets:" .. upstream_id
+    if singletons.db.strategy ~= "off" then
+      singletons.core_cache:invalidate_local("balancer:upstreams:" .. ws_id)
+      singletons.core_cache:invalidate_local(target_cache_key)
+    end
+
+    local balancer = balancers[upstream_id]
+    if balancer then
+      stop_healthchecker(balancer)
+    end
+
+    if operation == "delete" then
+      upstream_by_name[upstream_by_name_key] = nil
+      set_balancer(upstream_id, nil)
+
+    else
+      local upstream, err = get_upstream_by_id(upstream_id)
+
+      if err then
+        return nil, err
+      end
+
+      if not upstream then
+        log(ERR, "upstream not found for ", upstream_id)
+        return
+      end
+
+      local _, err = create_balancer(upstream, true)
+      if err then
+        log(ERR, "failed recreating balancer for ", upstream_name, ": ", err)
+      end
+
+      upstream_by_name[upstream_by_name_key] = upstream
+    end
+
+  end
+
+end
+
+
 ------------------------------------------------------------------------------
 -- Finds and returns an upstream entity. This function covers
 -- caching, invalidation, db access, et al.
@@ -663,18 +759,55 @@ end
 -- @return upstream table, or `false` if not found, or nil+error
 local function get_upstream_by_name(upstream_name)
   local ws_id = workspaces.get_workspace_id()
+  local upstream_key = ws_id .. ":" .. upstream_name
+  local upstream = upstream_by_name[upstream_key]
+
+  if upstream then
+    return upstream
+  end
 
   local upstreams_dict, err = get_all_upstreams()
   if err then
     return nil, err
   end
 
-  local upstream_id = upstreams_dict[ws_id .. ":" .. upstream_name]
+  local upstream_id = upstreams_dict[upstream_key]
   if not upstream_id then
-    return false -- no upstream by this name
+    if kong.configuration.worker_consistency == "eventual" then
+      local upstream_events = get_upstream_events_queue()
+      for i, v in ipairs(upstream_events) do
+        if v.upstream_data.name == upstream_name and
+          (v.operation == "create" or v.operation == "update") then
+          log(NOTICE, "upstream ", upstream_name, " used before it was ",
+              v.operation, "d. You might want to reduce worker_state_update_frequency")
+          local _, err = do_upstream_event(v.operation, v.upstream_data, v.workspaces)
+          if err then
+            log(CRIT, "failed handling upstream event: ", err)
+            return
+          end
+          table_remove(upstream_events_queue, i)
+          upstream_id = v.upstream_data.id
+          break
+        end
+
+      end
+    end
+
+    if not upstream_id then
+      return false -- no upstream by this name
+    end
+
   end
 
-  return get_upstream_by_id(upstream_id)
+  upstream, err = get_upstream_by_id(upstream_id)
+
+  if err then
+    return nil, err
+  end
+
+  upstream_by_name[upstream_key] = upstream
+
+  return upstream
 end
 
 
@@ -687,7 +820,6 @@ local function get_balancer(target, no_create)
   -- NOTE: only called upon first lookup, so `cache_only` limitations
   -- do not apply here
   local hostname = target.host
-
 
   -- first go and find the upstream object, from cache or the db
   local upstream, err = get_upstream_by_name(hostname)
@@ -703,7 +835,7 @@ local function get_balancer(target, no_create)
     if no_create then
       return nil, "balancer not found"
     else
-      log(ERR, "balancer not found for ", upstream.name, ", will create it")
+      log(NOTICE, "balancer not found for ", upstream.name, ", will create it")
       return create_balancer(upstream), upstream
     end
   end
@@ -717,33 +849,47 @@ end
 --==============================================================================
 
 
-local function do_target_event(operation, upstream_id, upstream_name)
+local function do_target_event(operation, target)
+  local upstream_id = target.upstream.id
+  local upstream_name = target.upstream.name
+
   singletons.core_cache:invalidate_local("balancer:targets:" .. upstream_id)
 
   local upstream = get_upstream_by_id(upstream_id)
   if not upstream then
-    log(ERR, "target ", operation, ": upstream not found for ", upstream_id)
+    log(ERR, "target ", operation, ": upstream not found for ", upstream_id,
+        upstream_name and " (" .. upstream_name .. ")" or "")
     return
   end
 
   local balancer = balancers[upstream_id]
   if not balancer then
-    log(ERR, "target ", operation, ": balancer not found for ", upstream_name)
+      log(DEBUG, "target ", operation, ": balancer not found for ", upstream_id,
+          upstream_name and " (" .. upstream_name .. ")" or "")
     return
   end
 
   local ok, err = check_target_history(upstream, balancer)
   if not ok then
-    log(ERR, "failed checking target history for ", upstream_name, ":  ", err)
+    log(ERR, "failed checking target history for ", upstream_id,
+        upstream_name and " (" .. upstream_name .. "): " or ": ", err)
   end
 end
+
 
 --------------------------------------------------------------------------------
 -- Called on any changes to a target.
 -- @param operation "create", "update" or "delete"
 -- @param target Target table with `upstream.id` field
 local function on_target_event(operation, target)
-  do_target_event(operation, target.upstream.id, target.upstream.name)
+  if kong.configuration.worker_consistency == "strict" then
+    local _, err = do_target_event(operation, target)
+    if err then
+      log(CRIT, "failed handling upstream event: ", err)
+    end
+  else
+    set_target_events_queue(operation, target)
+  end
 end
 
 
@@ -822,8 +968,6 @@ end
 
 
 do
-  local worker_state_version
-
   create_balancers = function()
     local upstreams, err = get_all_upstreams()
     if not upstreams then
@@ -849,62 +993,42 @@ do
     end
     log(DEBUG, "initialized ", oks, " balancer(s), ", errs, " error(s)")
 
-    set_worker_state_updated()
   end
-
-  is_worker_state_stale = function()
-    local current_version = kong.core_cache:get(worker_state_VERSION, TTL_ZERO, utils.uuid)
-    if current_version ~= worker_state_version then
-      return true
-    end
-
-    return false
-  end
-
-  set_worker_state_stale = function()
-    log(DEBUG, "invalidating proxy state")
-    kong.core_cache:invalidate(worker_state_VERSION)
-  end
-
-
-  set_worker_state_updated = function()
-    worker_state_version = kong.core_cache:get(worker_state_VERSION, TTL_ZERO, utils.uuid)
-    log(DEBUG, "proxy state is updated")
-  end
-
 end
 
 
 local function update_balancer_state(premature)
-  local concurrency = require "kong.concurrency"
-
   if premature then
     return
   end
 
-  local opts = {
-    name = "balancer_state",
-    timeout = 0,
-    on_timeout = "return_true",
-  }
+  local upstream_events = get_upstream_events_queue()
 
-  concurrency.with_coroutine_mutex(opts, function()
-    if is_worker_state_stale() then
-      -- load the upstreams before invalidating cache
-      local updated_upstreams_dict = load_upstreams_dict_into_memory()
-      if updated_upstreams_dict ~= nil then
-        singletons.core_cache:invalidate_local("balancer:upstreams")
-        local _, err = singletons.core_cache:get("balancer:upstreams",
-                      { neg_ttl = 10 }, function() return updated_upstreams_dict end)
-        if err then
-          log(CRIT, "failed updating list of upstreams: ", err)
-        else
-          set_worker_state_updated()
-        end
-
-      end
+  for i, v in ipairs(upstream_events) do
+    -- handle the oldest (first) event from the queue
+    local _, err = do_upstream_event(v.operation, v.upstream_data, v.workspaces)
+    if err then
+      log(ERR, "failed handling upstream event: ", err)
+      return
     end
-  end)
+
+    -- if no err, remove the upstream event from the queue
+    table_remove(upstream_events_queue, i)
+  end
+
+  local target_events = get_target_events_queue()
+
+  for i, v in ipairs(target_events) do
+    -- handle the oldest (first) event from the queue
+    local _, err = do_target_event(v.operation, v.target_data)
+    if err then
+      log(ERR, "failed handling target event: ", err)
+      return
+    end
+
+    -- if no err, remove the target event from the queue
+    table_remove(target_events_queue, i)
+  end
 
   local frequency = kong.configuration.worker_state_update_frequency or 1
   local _, err = timer_at(frequency, update_balancer_state)
@@ -917,6 +1041,7 @@ end
 
 local function init()
   if kong.configuration.worker_consistency == "eventual" then
+    local ws_id = workspaces.get_workspace_id()
     local opts = { neg_ttl = 10 }
     local upstreams_dict, err = singletons.core_cache:get("balancer:upstreams",
                                         opts, load_upstreams_dict_into_memory)
@@ -925,7 +1050,7 @@ local function init()
       return
     end
 
-    for _, id in pairs(upstreams_dict) do
+    for name, id in pairs(upstreams_dict) do
       local upstream_cache_key = "balancer:upstreams:" .. id
       local upstream, err = singletons.core_cache:get(upstream_cache_key, opts,
                       load_upstream_into_memory, id)
@@ -933,6 +1058,8 @@ local function init()
       if upstream == nil or err then
         log(WARN, "failed loading upstream ", id, ": ", err)
       end
+
+      upstream_by_name[ws_id .. ":" .. name] = upstream
 
       local target_cache_key = "balancer:targets:" .. id
       local target, err = singletons.core_cache:get(target_cache_key, opts,
@@ -958,85 +1085,23 @@ local function init()
 end
 
 
-local function do_upstream_event(operation, upstream_id, upstream_name)
-  if operation == "create" then
-    local upstream
-    if kong.configuration.worker_consistency == "eventual" then
-      set_worker_state_stale()
-      local upstream_cache_key = "balancer:upstreams:" .. upstream_id
-      singletons.core_cache:invalidate_local(upstream_cache_key)
-      -- force loading the upstream to the cache
-      upstream = singletons.core_cache:get(upstream_cache_key, { neg_ttl = 10 },
-                                load_upstream_into_memory, upstream_id)
-    else
-      singletons.core_cache:invalidate_local("balancer:upstreams")
-      upstream = get_upstream_by_id(upstream_id)
-    end
-
-    if not upstream then
-      log(ERR, "upstream not found for ", upstream_id)
-      return
-    end
-
-    local _, err = create_balancer(upstream)
-    if err then
-      log(CRIT, "failed creating balancer for ", upstream_name, ": ", err)
-    end
-
-  elseif operation == "delete" or operation == "update" then
-    local upstream_cache_key = "balancer:upstreams:" .. upstream_id
-    local target_cache_key = "balancer:targets:"   .. upstream_id
-    if singletons.db.strategy ~= "off" then
-      if kong.configuration.worker_consistency == "eventual" then
-        set_worker_state_stale()
-      else
-        singletons.core_cache:invalidate_local("balancer:upstreams")
-      end
-
-      singletons.core_cache:invalidate_local(upstream_cache_key)
-      singletons.core_cache:invalidate_local(target_cache_key)
-    end
-
-    local balancer = balancers[upstream_id]
-    if balancer then
-      stop_healthchecker(balancer)
-    end
-
-    if operation == "delete" then
-      set_balancer(upstream_id, nil)
-
-    else
-      local upstream
-      if kong.configuration.worker_consistency == "eventual" then
-        -- force loading the upstream to the cache
-        upstream = singletons.core_cache:get(upstream_cache_key, nil,
-                                  load_upstream_into_memory, upstream_id)
-      else
-        upstream = get_upstream_by_id(upstream_id)
-      end
-
-      if not upstream then
-        log(ERR, "upstream not found for ", upstream_id)
-        return
-      end
-
-      local _, err = create_balancer(upstream, true)
-      if err then
-        log(ERR, "failed recreating balancer for ", upstream_name, ": ", err)
-      end
-    end
-
-  end
-
-end
-
-
 --------------------------------------------------------------------------------
 -- Called on any changes to an upstream.
 -- @param operation "create", "update" or "delete"
 -- @param upstream_data table with `id` and `name` fields
 local function on_upstream_event(operation, upstream_data)
-  do_upstream_event(operation, upstream_data.id, upstream_data.name)
+  local ws_id = workspaces.get_workspace_id()
+
+  singletons.cache:invalidate_local("balancer:upstreams:" .. upstream_data.id)
+
+  if kong.configuration.worker_consistency == "strict" then
+    local _, err = do_upstream_event(operation, upstream_data, { ws_id })
+    if err then
+      log(CRIT, "failed handling upstream event: ", err)
+    end
+  else
+    set_upstream_events_queue(operation, upstream_data, { ws_id })
+  end
 end
 
 
