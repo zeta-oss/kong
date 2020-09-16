@@ -627,6 +627,11 @@ local CONF_INFERENCES = {
   untrusted_lua = { enum = { "on", "off", "sandbox" } },
   untrusted_lua_sandbox_requires = { typ = "array" },
   untrusted_lua_sandbox_environment = { typ = "array" },
+
+  consul_scheme = { enum = { "http", "https" }, },
+  consul_host = { typ = "string" },
+  consul_port = { typ = "number" },
+  consul_timeout = { typ = "number" },
 }
 
 

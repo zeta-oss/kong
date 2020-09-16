@@ -218,7 +218,7 @@ describe("load upstreams", function()
     end)
   end)
 
-  describe("upstream attribute", function()
+  describe("host_header attribute", function()
     -- refusals
     it("requires a valid hostname", function()
       local ok, err
@@ -260,6 +260,94 @@ describe("load upstreams", function()
       )
       assert.truthy(ok)
       assert.is_nil(err)
+    end)
+  end)
+
+  describe("service_discovery attribute", function()
+    -- refusals
+    it("requires a format", function()
+      local ok, err
+
+      ok, err = Upstreams:validate({
+        name = "test",
+        service_discovery = {
+          url = "http://example.com",
+        }
+      })
+      assert.falsy(ok)
+      assert.same({ service_discovery = { format = "required field missing" } }, err)
+    end)
+
+    it("requires a valid format", function()
+      local ok, err
+
+      ok, err = Upstreams:validate({
+        name = "test",
+        service_discovery = {
+          url = "http://example.com",
+          format = "viceconsul",
+        }
+      })
+      assert.falsy(ok)
+      assert.same({ service_discovery = { format = "expected one of: consul" } }, err)
+    end)
+
+    it("requires a URL", function()
+      local ok, err
+
+      ok, err = Upstreams:validate({
+        name = "test",
+        service_discovery = {
+          format = "consul",
+        }
+      })
+      assert.falsy(ok)
+      assert.same({ service_discovery = { url = "required field missing" } }, err)
+    end)
+
+    it("requires a valid URL", function()
+      local ok, err
+
+      ok, err = Upstreams:validate({
+        name = "test",
+        service_discovery = {
+          format = "consul",
+          url = "bla",
+        }
+      })
+      assert.falsy(ok)
+      assert.same({ service_discovery = { url = "missing host in url" } }, err)
+    end)
+
+    it("requires a valid timeout", function()
+      local ok, err
+
+      ok, err = Upstreams:validate({
+        name = "test",
+        service_discovery = {
+          format = "consul",
+          url = "http://example.com",
+          timeout = -123,
+        }
+      })
+      assert.falsy(ok)
+      assert.same({ service_discovery = { timeout = "value should be between 0 and 2147483646" } }, err)
+    end)
+
+    -- acceptance
+    it("accepts a valid entry", function()
+      local ok, err
+
+      ok, err = Upstreams:validate({
+        name = "test",
+        service_discovery = {
+          format = "consul",
+          url = "http://example.com",
+          timeout = 60000,
+        }
+      })
+      assert.truthy(ok)
+      assert.falsy(err)
     end)
   end)
 

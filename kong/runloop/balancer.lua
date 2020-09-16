@@ -4,6 +4,7 @@ local workspaces = require "kong.workspaces"
 local utils = require "kong.tools.utils"
 local hooks = require "kong.hooks"
 local get_certificate = require("kong.runloop.certificate").get_certificate
+local service_discovery = require "kong.service_discovery"
 
 
 -- due to startup/require order, cannot use the ones from 'kong' here
@@ -173,6 +174,12 @@ _load_targets_into_memory = load_targets_into_memory
 -- @return The targets array, with target entity tables.
 local function fetch_targets(upstream)
   local targets_cache_key = "balancer:targets:" .. upstream.id
+
+  if upstream.service_discovery then
+    return singletons.core_cache:get(targets_cache_key, nil,
+                                service_discovery.load_targets,
+                                upstream)
+  end
 
   return singletons.core_cache:get(targets_cache_key, nil,
                               load_targets_into_memory, upstream.id)
@@ -554,7 +561,7 @@ local opts = { neg_ttl = 10 }
 
 
 ------------------------------------------------------------------------------
--- Implements a simple dictionary with all upstream-ids indexed
+-- Implements a simple dictionary with all upstream indexed
 -- by their name.
 -- @return The upstreams dictionary (a map with upstream names as string keys
 -- and upstream entity tables as values), or nil+error
@@ -916,6 +923,11 @@ end
 
 
 local function init()
+  -- TODO conditional on whether there is a service discovery upstream
+  if ngx.worker.id() == 0 then
+    assert(service_discovery.init({ formats = { "consul" } }))
+  end
+
   if kong.configuration.worker_consistency == "strict" then
     create_balancers()
     return
@@ -945,8 +957,16 @@ local function init()
     end
 
     local target_cache_key = "balancer:targets:" .. id
-    local target, err = singletons.core_cache:get(target_cache_key, opts,
+    local targets
+    if upstream.service_discovery then
+      targets, err = singletons.core_cache:get(target_cache_key, nil,
+                service_discovery.load_targets,
+                upstream)
+    else
+      target, err = singletons.core_cache:get(target_cache_key, opts,
               load_targets_into_memory, id)
+    end
+
     if target == nil or err then
       log(WARN, "failed loading targets for upstream ", id, ": ", err)
     end

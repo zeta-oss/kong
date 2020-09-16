@@ -168,4 +168,9 @@ pluginserver_names = NONE
 untrusted_lua = sandbox
 untrusted_lua_sandbox_requires =
 untrusted_lua_sandbox_environment =
+
+consul_scheme = http
+consul_host = 127.0.0.1
+consul_port = 8500
+consul_timeout = 60000
 ]]
