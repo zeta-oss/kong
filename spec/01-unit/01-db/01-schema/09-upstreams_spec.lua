@@ -347,6 +347,7 @@ describe("load upstreams", function()
         }
       })
       assert.truthy(ok)
+      assert.falsy(err)
     end)
   end)
 

@@ -14,6 +14,10 @@ local consul_index = nil
 local parsed_urls_cache = {}
 
 
+local targets_cache = {}
+local upstreams_cache = {}
+
+
 -- Parse host url.
 -- @param `url` host url
 -- @return `parsed_url` a table with host details:
@@ -98,10 +102,6 @@ end
 
 
 local function ensure_running(format, url)
-  if ngx.worker.id() ~= 0 then -- only run on one worker
-    return
-  end
-
   if formats_running[format] then
     return
   end
@@ -127,6 +127,7 @@ local function ensure_running(format, url)
         if consul_index then
           req_url = req_url .. "?index=" .. consul_index
         end
+
         local ok, body, headers = http_get(req_url, 60000)
         if not formats_running[format] then
           consul_index = nil
@@ -143,21 +144,23 @@ local function ensure_running(format, url)
           -- If this is not true and the index keeps
           -- changing due to unrelated operations in Consul,
           -- this loop will spin a lot.
+          --
+          -- Once the X-Consul-Index changes, the targets list for
+          -- each consul upstream will be re-fetched and stored in
+          -- the targets cache. When `load_services` is called, the
+          -- list is returned from the cache.
           if consul_index and consul_index ~= new_consul_index then
+            for _, upstream in pairs(upstreams_cache) do
+              local targets = service_discovery.load_targets(upstream)
+              targets_cache[upstream.id] = targets
 
-            -- TODO the order of operations here is not ideal:
-            -- we are flushing the cache before we get the new
-            -- data. Instead, we should query Consul about
-            -- all relevant upstreams here and replace their
-            -- target cache data before sending the "reset" signal.
-            -- With the cache pre-filled, the "reset" signal would
-            -- then just update the state of the balancer objects.
-            local ok, err = kong.worker_events.post("balancer", "targets", {
-              operation = "reset",
-              entity = { id = "all", name = "all" }
-            })
-            if not ok then
-              kong.log.err(err)
+              local ok, err = kong.worker_events.post("balancer", "targets", {
+                operation = "reset",
+                entity = { upstream = upstream }
+              })
+              if not ok then
+                kong.log.err(err)
+              end
             end
           end
 
@@ -184,6 +187,10 @@ end
 function service_discovery.load_targets(upstream)
   if upstream.service_discovery.format == "consul" then
     ensure_running("consul", upstream.service_discovery.url)
+
+    if targets_cache[upstream.id] then
+      return targets_cache[upstream.id]
+    end
 
     local ok, resp = http_get(upstream.service_discovery.url,
                               upstream.service_discovery.timeout)
@@ -224,10 +231,11 @@ function service_discovery.load_targets(upstream)
       })
     end
 
+    upstreams_cache[upstream.id] = upstream
+    targets_cache[upstream.id] = targets
+
     return targets
   end
-
-  return {}
 end
 
 
@@ -237,6 +245,16 @@ end
 -- @param upstream Upstream entity object; if "delete", contains only the id
 -- @return The target array, with target entity tables.
 function service_discovery.on_upstream_event(operation, upstream)
+  if operation == "create" then
+    -- ?
+
+  elseif operation == "delete"
+      or operation == "update"
+      or operation == "upsert" then
+    upstreams_cache[upstream.id] = nil
+    targets_cache[upstream.id] = nil
+
+  end
 end
 
 

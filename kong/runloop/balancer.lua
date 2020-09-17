@@ -179,11 +179,10 @@ _load_targets_into_memory = load_targets_into_memory
 local function fetch_target_history(upstream)
   local targets_cache_key = "balancer:targets:" .. upstream.id
 
-  print"FETCH_TARGET_HISTORY"
   if upstream.service_discovery then
-    print"LOADING TARGETS"
     return singletons.core_cache:get(targets_cache_key, nil,
-                                service_discovery.load_targets, upstream)
+                                service_discovery.load_targets,
+                                upstream)
   end
 
   return singletons.core_cache:get(targets_cache_key, nil,
@@ -496,8 +495,6 @@ do
       start = 1
     end
 
-    print("APPLY HISTORY")
-    print(require"inspect"(history))
     apply_history(balancer, history, start)
 
     upstream_ids[balancer] = upstream.id
@@ -1029,9 +1026,7 @@ local function do_upstream_event(operation, upstream_id, upstream_name)
     if operation == "delete" then
       set_balancer(upstream_id, nil)
 
-     if upstream.service_discovery then
-       service_discovery.on_upstream_event("delete", { id = upstream_id })
-     end
+      service_discovery.on_upstream_event("delete", { id = upstream_id })
 
     else
       local upstream
