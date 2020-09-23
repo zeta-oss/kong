@@ -222,21 +222,35 @@ local function http_server(host, port, counts, test_log, protocol, check_hostnam
             local total_counts = cjson.decode(server_values:get("counts"))
             local host_header = ngx.req.get_headers()["host"]
             host_header = host_header and string.match(host_header, "([%d|%a|\\.]+):*") or "host"
-            local counts = total_counts[1] and total_counts or total_counts[host_header]
+            local counts
             local status
-            local i = require 'inspect'
 
-            if counts[1] > 0 then
+            if total_counts then
+              counts = total_counts[1] and total_counts or total_counts[host_header]
+            end
+            if not counts then
+              ngx.log(ngx.DEBUG, "too many requests")
+            elseif counts[1] > 0 then
               counts[1] = counts[1] - 1
             elseif counts[1] == -1 then -- TIMEOUT
               table.remove(counts, 1)
               ngx.sleep(0.2)
             elseif counts[1] == 0 then
               table.remove(counts, 1)
+              -- if this was the last req for this count, switch healthy state
+              if not total_counts[host_header] then
+                if server_values:get("healthy_" .. host_header) == false then
+                    server_values:set("healthy_" .. host_header, true)
+                  else
+                    server_values:set("healthy_" .. host_header, false)
+                  end
+              end
             end
-            if server_values:get("handshake_done") == false or not counts[1] then
+
+            if server_values:get("handshake_done") == false or not counts or not counts[1] then
               ngx.log(ngx.INFO, "server ", ngx.var.server_name, " (", host_header, ") ",
-                      "status ", tostring(ngx.HTTP_BAD_REQUEST), " - missing handshake")
+                      "status ", tostring(ngx.HTTP_BAD_REQUEST), " - missing handshake ",
+                      "or more requests than expected")
               status = ngx.HTTP_BAD_REQUEST
             elseif server_values:get("healthy_" .. host_header) ~= false then
               status = ngx.HTTP_OK
@@ -249,12 +263,12 @@ local function http_server(host, port, counts, test_log, protocol, check_hostnam
               ngx.log(ngx.INFO, "server ", ngx.var.server_name, " (", host_header, ") ",
                       "status ", tostring(ngx.HTTP_INTERNAL_SERVER_ERROR), " - unhealthy")
             end
-            if total_counts[1] then
-              total_counts = counts
-            else
+            if total_counts[host_header] then
               total_counts[host_header] = counts
+            else
+              total_counts = counts
             end
-            server_values:set("counts", cjson.encode(total_counts))
+            server_values:set("counts", cjson.encode(total_counts or {}))
             ngx.exit(status)
           }
         }
