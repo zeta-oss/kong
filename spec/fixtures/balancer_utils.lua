@@ -2,6 +2,9 @@ local cjson = require "cjson"
 local declarative = require "kong.db.declarative"
 local helpers = require "spec.helpers"
 local utils = require "kong.tools.utils"
+local pl_dir = require "pl.dir"
+local pl_file = require "pl.file"
+local pl_path = require "pl.path"
 
 local CONSISTENCY_FREQ = 0.1
 local FIRST_PORT = 20000
@@ -107,17 +110,181 @@ end
 -- @param test_log (optional, default fals) Produce detailed logs
 -- @return Returns the number of successful and failure responses.
 local function http_server(host, port, counts, test_log, protocol, check_hostname)
+  local tmp_path = pl_path.tmpname()
+  local abs_path = pl_path.abspath(".")
+  local pid_file = tmp_path .. "_nginx.pid"
+  local certificate = abs_path .. "/spec/fixtures/kong_spec.crt"
+  local key = abs_path .. "/spec/fixtures/kong_spec.key"
+  local error_log
+  if test_log ~= "true" then
+    error_log = tmp_path .. [[_logs/error.log]]
+    local _, err = pl_dir.makepath(tmp_path .. "_logs")
+    if err then
+      print("could not create http_server log path: ", err)
+      error_log = [[stderr]]
+    end
+  else
+    error_log = [[stderr]] or tmp_path .. [[_logs/error.log]]
+  end
+
+  local nginx_conf_content = [[
+    daemon on;
+    worker_processes 2;
+    error_log ]] .. error_log .. [[ info;
+    pid ]] .. pid_file .. [[;
+    worker_rlimit_nofile 8192;
+    events { worker_connections 1024; }
+    http {
+      lua_shared_dict server_values 1m;
+      init_worker_by_lua_block {
+        local cjson = require("cjson")
+        local server_values = ngx.shared.server_values
+        server_values:set("handshake_done", ]] .. (protocol == "https" and [[false]] or [[true]]) .. [[)
+        server_values:set("counts", "]] .. cjson.encode(counts):gsub('"', '\\"') .. [[")
+      }
+      server {
+        listen 127.0.0.1:]] .. tostring(port) .. ((protocol == "https") and ([[ ssl;
+        ssl_certificate ]] .. certificate .. [[;
+        ssl_certificate_key ]] .. key .. [[;
+        ssl_protocols TLSv1.1 TLSv1.2 TLSv1.3;
+        ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+        ssl_prefer_server_ciphers off;
+        ssl_session_tickets on;
+        ssl_session_timeout 1d;
+        ]]) or ([[;
+        ]])) ..
+        [[server_name ]] .. host .. [[;
+        location = /healthy {
+          access_by_lua_block {
+            local host_header = ngx.req.get_headers()["host"]
+            host_header = host_header and string.match(host_header, "([%d|%a|\\.]+):*") or "host"
+            ngx.shared.server_values:set("healthy_" .. host_header, true)
+            ngx.log(ngx.INFO, "server ", ngx.var.server_name, " (", host_header, ") is now healthy")
+          }
+          content_by_lua_block {
+            ngx.say("server ", ngx.var.server_name, " is now healthy")
+            return ngx.exit(ngx.HTTP_OK)
+          }
+        }
+        location = /unhealthy {
+          access_by_lua_block {
+            local host_header = ngx.req.get_headers()["host"]
+            host_header = host_header and string.match(host_header, "([%d|%a|\\.]+):*") or "host"
+            ngx.shared.server_values:set("healthy_" .. host_header, false)
+            ngx.log(ngx.INFO, "server ", ngx.var.server_name, " (", host_header, ") is now unhealthy")
+          }
+          content_by_lua_block {
+            ngx.say("server ", ngx.var.server_name, " is now unhealthy")
+            return ngx.exit(ngx.HTTP_OK)
+          }
+        }
+        location = /status {
+          access_by_lua_block {
+            local server_values = ngx.shared.server_values
+            local host_header = ngx.req.get_headers()["host"]
+            host_header = host_header and string.match(host_header, "([%d|%a|\\.]+):*") or "host"
+            server_values:incr("n_checks_" .. host_header, 1, 0)
+            local status = server_values:get("healthy_" .. host_header) ~= false and
+                            ngx.HTTP_OK or ngx.HTTP_INTERNAL_SERVER_ERROR
+            ngx.log(ngx.INFO, "server ", ngx.var.server_name, " (", host_header, ") status check: ",
+                    status, " - is ", server_values:get("healthy_" .. host_header) ~= false and
+                    "healthy" or "unhealthy")
+            ngx.exit(status)
+          }
+        }
+        location ~ ^/(shutdown|results)$ {
+          content_by_lua_block {
+            local cjson = require("cjson")
+            local server_values = ngx.shared.server_values
+            local host_header = ngx.req.get_headers()["host"]
+            host_header = host_header and string.match(host_header, "([%d|%a|\\.]+):*") or "host"
+            local body = cjson.encode({
+              ok_responses = server_values:get("successes_" .. host_header) or 0,
+              fail_responses = server_values:get("failures_" .. host_header) or 0,
+              n_checks = server_values:get("n_checks_" .. host_header) or 0,
+            })
+            ngx.log(ngx.INFO, "server ", ngx.var.server_name, " (", host_header, ") ",
+                      "results: ", body)
+            ngx.say(body)
+          }
+        }
+        location = /handshake {
+          content_by_lua_block {
+            ngx.shared.server_values:set("handshake_done", true)
+            ngx.say("shaken, not stirred")
+            return ngx.exit(ngx.HTTP_OK)
+          }
+        }
+        location / {
+          access_by_lua_block {
+            local cjson = require("cjson")
+            local server_values = ngx.shared.server_values
+            local total_counts = cjson.decode(server_values:get("counts"))
+            local host_header = ngx.req.get_headers()["host"]
+            host_header = host_header and string.match(host_header, "([%d|%a|\\.]+):*") or "host"
+            local counts = total_counts[1] and total_counts or total_counts[host_header]
+            local status
+            local i = require 'inspect'
+            ngx.log(ngx.ERR, "HERE total_counts ", i(total_counts),
+          " host_header ", host_header, " counts ", i(counts),
+          " server_values ", i(server_values))
+
+            if counts[1] > 0 then
+              counts[1] = counts[1] - 1
+            elseif counts[1] == -1 then -- TIMEOUT
+              table.remove(counts, 1)
+              ngx.sleep(0.2)
+            elseif counts[1] == 0 then
+              table.remove(counts, 1)
+            end
+            if server_values:get("handshake_done") == false or not counts[1] then
+              ngx.log(ngx.INFO, "server ", ngx.var.server_name, " (", host_header, ") ",
+                      "status ", tostring(ngx.HTTP_BAD_REQUEST), " - missing handshake")
+              status = ngx.HTTP_BAD_REQUEST
+            elseif server_values:get("healthy_" .. host_header) ~= false then
+              status = ngx.HTTP_OK
+              server_values:incr("successes_" .. host_header, 1, 0)
+              ngx.log(ngx.INFO, "server ", ngx.var.server_name, " (", host_header, ") ",
+                      "status ", tostring(ngx.HTTP_OK))
+            else
+              status = ngx.HTTP_INTERNAL_SERVER_ERROR
+              server_values:incr("failures_" .. host_header, 1, 0)
+              ngx.log(ngx.INFO, "server ", ngx.var.server_name, " (", host_header, ") ",
+                      "status ", tostring(ngx.HTTP_INTERNAL_SERVER_ERROR), " - unhealthy")
+            end
+            if total_counts[1] then
+              total_counts = counts
+            else
+              total_counts[host_header] = counts
+            end
+            server_values:set("counts", cjson.encode(total_counts))
+            ngx.exit(status)
+          }
+        }
+      } ]] .. (check_hostname and [[
+      server {
+        listen 127.0.0.1:]] .. tostring(port) .. ((protocol == "https") and ([[ ssl;
+        ssl_certificate ]] .. certificate .. [[;
+        ssl_certificate_key ]] .. key .. [[;
+        ssl_protocols TLSv1.1 TLSv1.2 TLSv1.3;
+        ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+        ]]) or ([[;
+        ]])) ..
+        [[server_name _;
+        return 400;
+      }]] or [[]]) .. [[
+    }
+  ]]
+
+  pl_file.write(tmp_path, nginx_conf_content)
+
   -- This is a "hard limit" for the execution of tests that launch
   -- the custom http_server
   local hard_timeout = ngx.now() + 300
   protocol = protocol or "http"
 
-  local cmd = "resty --errlog-level error " .. -- silence _G write guard warns
-              "spec/fixtures/balancer_https_server.lua " ..
-              protocol .. " " .. host .. " " .. port ..
-              " \"" .. cjson.encode(counts):gsub('"', '\\"') .. "\" " ..
-              (test_log or "false") .. " ".. (check_hostname or "false") .. " &"
-  os.execute(cmd)
+  local nginx_cmd = "nginx -c " .. tmp_path
+  os.execute(nginx_cmd)
 
   repeat
     local _, err = direct_request(host, port, "/handshake", protocol)
@@ -128,11 +295,17 @@ local function http_server(host, port, counts, test_log, protocol, check_hostnam
 
   local server = {}
   server.done = function(_, host_header)
+    local kill_cmd = string.format("kill -15 `cat %s` >/dev/null 2>&1", pid_file)
     local body = direct_request(host, port, "/shutdown", protocol, host_header)
+    os.execute(kill_cmd)
+    --print("tmp_path logs in ", tmp_path, "_logs/error.log not removing")
+    pl_dir.rmtree (tmp_path .. [[_logs]])
+    pl_file.delete(tmp_path)
     if body then
       local tbl = assert(cjson.decode(body))
       return true, tbl.ok_responses, tbl.fail_responses, tbl.n_checks
     end
+    return nil
   end
 
   return server
