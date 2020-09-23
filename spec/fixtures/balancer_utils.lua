@@ -116,15 +116,15 @@ local function http_server(host, port, counts, test_log, protocol, check_hostnam
   local certificate = abs_path .. "/spec/fixtures/kong_spec.crt"
   local key = abs_path .. "/spec/fixtures/kong_spec.key"
   local error_log
-  if test_log ~= "true" then
+  if test_log == true or test_log == "true" then -- string for the old times' sake
+    error_log = [[stderr]]
+  else
     error_log = tmp_path .. [[_logs/error.log]]
     local _, err = pl_dir.makepath(tmp_path .. "_logs")
     if err then
       print("could not create http_server log path: ", err)
       error_log = [[stderr]]
     end
-  else
-    error_log = [[stderr]] or tmp_path .. [[_logs/error.log]]
   end
 
   local nginx_conf_content = [[
@@ -225,9 +225,6 @@ local function http_server(host, port, counts, test_log, protocol, check_hostnam
             local counts = total_counts[1] and total_counts or total_counts[host_header]
             local status
             local i = require 'inspect'
-            ngx.log(ngx.ERR, "HERE total_counts ", i(total_counts),
-          " host_header ", host_header, " counts ", i(counts),
-          " server_values ", i(server_values))
 
             if counts[1] > 0 then
               counts[1] = counts[1] - 1
@@ -298,8 +295,9 @@ local function http_server(host, port, counts, test_log, protocol, check_hostnam
     local kill_cmd = string.format("kill -15 `cat %s` >/dev/null 2>&1", pid_file)
     local body = direct_request(host, port, "/shutdown", protocol, host_header)
     os.execute(kill_cmd)
-    --print("tmp_path logs in ", tmp_path, "_logs/error.log not removing")
-    pl_dir.rmtree (tmp_path .. [[_logs]])
+    if test_log ~= true and test_log ~= "true" then
+      pl_dir.rmtree (tmp_path .. [[_logs]])
+    end
     pl_file.delete(tmp_path)
     if body then
       local tbl = assert(cjson.decode(body))
