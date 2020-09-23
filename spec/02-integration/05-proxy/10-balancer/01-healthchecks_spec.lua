@@ -520,27 +520,42 @@ for _, strategy in helpers.each_strategy() do
             bu.wait_for_router_update(bp, old_rv, localhost, proxy_port_2, admin_port_2)
             bu.end_testcase_setup(strategy, bp)
 
-            local server
-            helpers.wait_until(function()
-              server = assert(bu.http_server(localhost, port, { 20, 20, 20 }))
-              return true
-            end, 10)
+            local server = bu.http_server(localhost, port, { 60 })
 
             -- server responds, then fails, then responds again
-            local seq = {
-              { port = proxy_port_2, oks = 10, fails = 0, last_status = 200 },
-              { port = proxy_port_1, oks = 10, fails = 0, last_status = 200 },
-              { port = proxy_port_2, oks = 0, fails = 10, last_status = 500 },
-              { port = proxy_port_1, oks = 0, fails = 10, last_status = 500 },
-              { port = proxy_port_2, oks = 10, fails = 0, last_status = 200 },
-              { port = proxy_port_1, oks = 10, fails = 0, last_status = 200 },
-            }
-            for i, test in ipairs(seq) do
-              local oks, fails, last_status = bu.client_requests(10, api_host, "127.0.0.1", test.port)
-              assert.same(test.oks, oks, "iteration " .. tostring(i))
-              assert.same(test.fails, fails, "iteration " .. tostring(i))
-              assert.same(test.last_status, last_status, "iteration " .. tostring(i))
-            end
+            local oks, fails, last_status = bu.client_requests(10, api_host, "127.0.0.1", proxy_port_2)
+            assert.same(oks, 10)
+            assert.same(fails, 0)
+            assert.same(last_status, 200)
+
+            oks, fails, last_status = bu.client_requests(10, api_host, "127.0.0.1", proxy_port_1)
+            assert.same(oks, 10)
+            assert.same(fails, 0)
+            assert.same(last_status, 200)
+
+            bu.direct_request(localhost, port, "/unhealthy")
+
+            oks, fails, last_status = bu.client_requests(10, api_host, "127.0.0.1", proxy_port_2)
+            assert.same(oks, 0)
+            assert.same(fails, 10)
+            assert.same(last_status, 500)
+
+            oks, fails, last_status = bu.client_requests(10, api_host, "127.0.0.1", proxy_port_1)
+            assert.same(oks, 0)
+            assert.same(fails, 10)
+            assert.same(last_status, 500)
+
+            bu.direct_request(localhost, port, "/healthy")
+
+            oks, fails, last_status = bu.client_requests(10, api_host, "127.0.0.1", proxy_port_2)
+            assert.same(oks, 10)
+            assert.same(fails, 0)
+            assert.same(last_status, 200)
+
+            oks, fails, last_status = bu.client_requests(10, api_host, "127.0.0.1", proxy_port_1)
+            assert.same(oks, 10)
+            assert.same(fails, 0)
+            assert.same(last_status, 200)
 
             -- collect server results
             local _, server_oks, server_fails = server:done()
