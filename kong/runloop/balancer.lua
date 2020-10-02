@@ -645,7 +645,7 @@ local opts = { neg_ttl = 10 }
 
 
 ------------------------------------------------------------------------------
--- Implements a simple dictionary with all upstream-ids indexed
+-- Implements a simple dictionary with all upstream indexed
 -- by their name.
 -- @return The upstreams dictionary (a map with upstream names as string keys
 -- and upstream entity tables as values), or nil+error
@@ -923,6 +923,8 @@ end
 
 
 local function init()
+  print"RUNNING INIT"
+
   if kong.configuration.worker_consistency == "eventual" then
     local opts = { neg_ttl = 10 }
     local upstreams_dict, err = singletons.core_cache:get("balancer:upstreams",
@@ -931,8 +933,6 @@ local function init()
       log(CRIT, "failed loading list of upstreams: ", err)
       return
     end
-
-    service_discovery.init()
 
     for _, id in pairs(upstreams_dict) do
       local upstream_cache_key = "balancer:upstreams:" .. id
@@ -958,6 +958,11 @@ local function init()
         log(WARN, "failed loading targets for upstream ", id, ": ", err)
       end
     end
+  end
+
+  -- TODO conditional on whether there is a service discovery upstream
+  if ngx.worker.id() == 0 then
+    assert(service_discovery.init({ formats = { "consul" } }))
   end
 
   create_balancers()
@@ -995,10 +1000,6 @@ local function do_upstream_event(operation, upstream_id, upstream_name)
       return
     end
 
-    if upstream.service_discovery then
-      service_discovery.on_upstream_event("create", upstream)
-    end
-
     local _, err = create_balancer(upstream)
     if err then
       log(CRIT, "failed creating balancer for ", upstream_name, ": ", err)
@@ -1006,7 +1007,8 @@ local function do_upstream_event(operation, upstream_id, upstream_name)
 
   elseif operation == "delete" or operation == "update" then
     local upstream_cache_key = "balancer:upstreams:" .. upstream_id
-    local target_cache_key = "balancer:targets:"   .. upstream_id
+    local targets_cache_key = "balancer:targets:"   .. upstream_id
+
     if singletons.db.strategy ~= "off" then
       if kong.configuration.worker_consistency == "eventual" then
         set_worker_state_stale()
@@ -1015,7 +1017,7 @@ local function do_upstream_event(operation, upstream_id, upstream_name)
       end
 
       singletons.core_cache:invalidate_local(upstream_cache_key)
-      singletons.core_cache:invalidate_local(target_cache_key)
+      singletons.core_cache:invalidate_local(targets_cache_key)
     end
 
     local balancer = balancers[upstream_id]
@@ -1025,8 +1027,6 @@ local function do_upstream_event(operation, upstream_id, upstream_name)
 
     if operation == "delete" then
       set_balancer(upstream_id, nil)
-
-      service_discovery.on_upstream_event("delete", { id = upstream_id })
 
     else
       local upstream
@@ -1041,10 +1041,6 @@ local function do_upstream_event(operation, upstream_id, upstream_name)
       if not upstream then
         log(ERR, "upstream not found for ", upstream_id)
         return
-      end
-
-      if upstream.service_discovery then
-        service_discovery.on_upstream_event(operation, upstream)
       end
 
       local _, err = create_balancer(upstream, true)

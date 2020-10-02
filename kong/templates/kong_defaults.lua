@@ -157,4 +157,9 @@ lua_package_cpath = NONE
 
 role = traditional
 kic = off
+
+consul_scheme = http
+consul_host = 127.0.0.1
+consul_port = 8500
+consul_timeout = 60000
 ]]

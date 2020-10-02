@@ -1247,3 +1247,11 @@
                                  # server.
                                  #
                                  # See https://github.com/openresty/lua-nginx-module#lua_socket_pool_size
+
+#------------------------------------------------------------------------------
+# SERVICE DISCOVERY
+#------------------------------------------------------------------------------
+
+# consul_scheme = http
+# consul_host = 127.0.0.1
+# consul_port = 8500

@@ -1,7 +1,6 @@
 local cjson = require "cjson"
 local utils = require "kong.tools.utils"
 local http = require "resty.http"
-local socket_url = require "socket.url"
 
 
 local service_discovery = {}
@@ -11,55 +10,17 @@ local formats_running = {}
 local consul_index = nil
 
 
-local parsed_urls_cache = {}
-
-
-local targets_cache = {}
-local upstreams_cache = {}
-
-
--- Parse host url.
--- @param `url` host url
--- @return `parsed_url` a table with host details:
--- scheme, host, port, path, query, userinfo
-local function parse_url(host_url)
-  local parsed_url = parsed_urls_cache[host_url]
-
-  if parsed_url then
-    return parsed_url
-  end
-
-  parsed_url = socket_url.parse(host_url)
-  if not parsed_url.port then
-    if parsed_url.scheme == "http" then
-      parsed_url.port = 80
-    elseif parsed_url.scheme == "https" then
-      parsed_url.port = 443
-    end
-  end
-  if not parsed_url.path then
-    parsed_url.path = "/"
-  end
-
-  parsed_urls_cache[host_url] = parsed_url
-
-  return parsed_url
-end
-
-
-local function http_get(http_endpoint, timeout)
-  local parsed_url = parse_url(http_endpoint)
-  local host = parsed_url.host
-  local port = tonumber(parsed_url.port)
-
+local function http_get(scheme, host, port, path, query, timeout)
   local httpc = http.new()
   httpc:set_timeout(timeout)
+
   local ok, err = httpc:connect(host, port)
   if not ok then
-    return nil, "failed to connect to " .. host .. ":" .. tostring(port) .. ": " .. err
+    return nil, "failed to connect to "
+      .. host .. ":" .. tostring(port) .. ": " .. err
   end
 
-  if parsed_url.scheme == "https" then
+  if scheme == "https" then
     local _, err = httpc:ssl_handshake(true, host, false)
     if err then
       return nil, "failed to do SSL handshake with " ..
@@ -69,114 +30,150 @@ local function http_get(http_endpoint, timeout)
 
   local res, err = httpc:request({
     method = "GET",
-    path = parsed_url.path,
-    query = parsed_url.query,
+    path = path,
+    query = query or "",
     headers = {
-      ["Host"] = parsed_url.host,
+      ["Host"] = host,
     },
   })
   if not res then
-    return nil, "failed request to " .. host .. ":" .. tostring(port) .. ": " .. err
+    return nil, "failed request to "
+      .. host .. ":" .. tostring(port) .. ": " .. err
   end
 
-  -- always read response body, even if we discard it without using it on success
+  -- always read response body, even if we discard it without using
+  -- it on success
   local response_body = res:read_body()
   local success = res.status < 400
   local err_msg
 
   if not success then
     err_msg = "request to " .. host .. ":" .. tostring(port) ..
-              " returned status code " .. tostring(res.status) .. " and body " ..
-              response_body
+              " returned status code " .. tostring(res.status) ..
+              " and body " .. response_body
   end
 
   ok, err = httpc:set_keepalive()
   if not ok then
-    -- the batch might already be processed at this point, so not being able to set the keepalive
-    -- will not return false (the batch might not need to be reprocessed)
-    kong.log.err("failed keepalive for ", host, ":", tostring(port), ": ", err)
+    -- the batch might already be processed at this point, so not being
+    -- able to set the keepalive will not return false (the batch might
+    -- not need to be reprocessed)
+    kong.log.err("failed keepalive for ", host, ":",
+      tostring(port), ": ", err)
   end
 
   return success, response_body or err_msg, res.headers
 end
 
 
-local function ensure_running(format, url)
+local function invalidate_consul_upstreams()
+  local balancer = require "kong.runloop.balancer"
+
+  for _, upstream_id in pairs(balancer.get_all_upstreams()) do
+    local upstream = balancer.get_upstream_by_id(upstream_id)
+    if upstream.service_discovery then
+      print("INVALIDATING UPSTREAM" .. upstream.name)
+
+      -- only invalidate if updated targets list can be obtained
+      local targets = service_discovery.load_targets(upstream)
+      if not targets then
+        return nil, "failed fetching updated targets"
+      end
+
+      local target_data = { upstream = upstream }
+      balancer.on_target_event("update", target_data, target_data)
+    end
+  end
+
+  return true
+end
+
+
+local function init_watcher_consul()
+  ngx.timer.at(0, function(premature)
+    if premature then
+      return
+    end
+
+    while formats_running["consul"] do
+      print"RUNNING CONSUL WATCHER"
+      print(ngx.worker.id())
+      print(ngx.worker.pid())
+
+      local ok, body, headers = http_get(kong.configuration.consul_scheme,
+                                         kong.configuration.consul_host,
+                                         kong.configuration.consul_port,
+                                         "/v1/catalog/services",
+                                         { index = consul_index },
+                                         3000)
+      if not ok and not body:match("timeout") then
+        kong.log.err("failed querying Consul services: ", body)
+        goto continue
+      end
+
+      if not formats_running["consul"] then
+        consul_index = nil
+      end
+
+      if headers then
+        -- This assumes that any change in the X-Consul-Index
+        -- value means that a relevant change has happened in
+        -- the targets.
+        --
+        -- If this is not true and the index keeps
+        -- changing due to unrelated operations in Consul,
+        -- this loop will spin a lot.
+        local new_consul_index = headers["X-Consul-Index"]
+        consul_index = consul_index or new_consul_index
+
+        if consul_index and consul_index ~= new_consul_index then
+          print "CONSUL WATCHER: NEW INDEX"
+          print("worker = " .. ngx.worker.id())
+
+          -- only update index if invalidation / reload was successful
+          if invalidate_consul_upstreams() then
+            consul_index = new_consul_index
+          end
+        end
+      end
+
+      ::continue::
+    end
+  end)
+
+  return true
+end
+
+
+-- Background Watcher
+-- Detects changes on services and invalidates Kong state
+-- Only runs on worker 0
+local function init_watcher(format)
   if formats_running[format] then
-    return
+    return true
+  end
+
+  if format == "consul" then
+    assert(init_watcher_consul())
   end
 
   formats_running[format] = true
 
-  if format == "consul" then
-    -- This assumes that all upstreams using Consul are pointing
-    -- to the same Consul host, so any URL received works to
-    -- initialize the blocking-query watcher
-    local parsed_url = parse_url(url)
-    local services_url = parsed_url.scheme .. "://" ..
-                         parsed_url.host .. ":" .. parsed_url.port ..
-                         "/v1/catalog/services"
-
-    ngx.timer.at(0, function(premature)
-      if premature then
-        return
-      end
-
-      while formats_running[format] do
-        local req_url = services_url
-        if consul_index then
-          req_url = req_url .. "?index=" .. consul_index
-        end
-
-        local ok, body, headers = http_get(req_url, 60000)
-        if not formats_running[format] then
-          consul_index = nil
-          break
-        end
-
-        if headers then
-          local new_consul_index = headers["X-Consul-Index"]
-
-          -- This assumes that any change in the X-Consul-Index
-          -- value means that a relevant change has happened in
-          -- the targets.
-          --
-          -- If this is not true and the index keeps
-          -- changing due to unrelated operations in Consul,
-          -- this loop will spin a lot.
-          --
-          -- Once the X-Consul-Index changes, the targets list for
-          -- each consul upstream will be re-fetched and stored in
-          -- the targets cache. When `load_services` is called, the
-          -- list is returned from the cache.
-          if consul_index and consul_index ~= new_consul_index then
-            for _, upstream in pairs(upstreams_cache) do
-              local targets = service_discovery.load_targets(upstream)
-              targets_cache[upstream.id] = targets
-
-              local ok, err = kong.worker_events.post("balancer", "targets", {
-                operation = "reset",
-                entity = { upstream = upstream }
-              })
-              if not ok then
-                kong.log.err(err)
-              end
-            end
-          end
-
-          consul_index = new_consul_index
-        end
-      end
-    end)
-  end
+  return true
 end
 
 
 ------------------------------------------------------------------------------
 -- Resets the service discovery background operations
-function service_discovery.init()
-  -- this will cause the background watcher to eventually stop.
+function service_discovery.init(opts)
+  -- this will cause the background watcher to eventually stop
   formats_running = {}
+
+  for _, format in ipairs(opts.formats) do
+    assert(init_watcher(format))
+  end
+
+  return true
 end
 
 
@@ -185,23 +182,24 @@ end
 -- @param upstream Upstream entity object
 -- @return The target array, with target entity tables.
 function service_discovery.load_targets(upstream)
+  print("LOADING TARGETS FOR ", upstream.name)
+
   if upstream.service_discovery.format == "consul" then
-    ensure_running("consul", upstream.service_discovery.url)
 
-    if targets_cache[upstream.id] then
-      return targets_cache[upstream.id]
-    end
-
-    local ok, resp = http_get(upstream.service_discovery.url,
-                              upstream.service_discovery.timeout)
+    local ok, resp = http_get(kong.configuration.consul_scheme,
+                              kong.configuration.consul_host,
+                              kong.configuration.consul_port,
+                              "/v1/catalog/service/" .. upstream.name,
+                              { index = consul_index },
+                              kong.configuration.consul_timeout)
     if not ok then
       kong.log.err("failed querying Consul: ", resp)
       return {}
     end
 
-    local data = cjson.decode(resp)
+    local data, err = cjson.decode(resp)
     if not data then
-      kong.log.err("failed parsing JSON in Consul response: ", resp)
+      kong.log.err("failed parsing JSON in Consul response: ", err)
       return {}
     end
 
@@ -210,11 +208,13 @@ function service_discovery.load_targets(upstream)
     local targets = {}
     for _, item in ipairs(data) do
       local host = item.ServiceAddress
-      if host == "" then
+      if not host or host == "" then
         host = item.Address
       end
 
       local port = item.ServicePort
+
+      -- TODO what other fields are relevant?
       local weight = item.ServiceMeta
                      and item.ServiceMeta.weight
                      or  100
@@ -231,29 +231,7 @@ function service_discovery.load_targets(upstream)
       })
     end
 
-    upstreams_cache[upstream.id] = upstream
-    targets_cache[upstream.id] = targets
-
     return targets
-  end
-end
-
-
-------------------------------------------------------------------------------
--- Loads a list of targets via service discovery
--- @param operation "create", "delete", "update", "upsert"
--- @param upstream Upstream entity object; if "delete", contains only the id
--- @return The target array, with target entity tables.
-function service_discovery.on_upstream_event(operation, upstream)
-  if operation == "create" then
-    -- ?
-
-  elseif operation == "delete"
-      or operation == "update"
-      or operation == "upsert" then
-    upstreams_cache[upstream.id] = nil
-    targets_cache[upstream.id] = nil
-
   end
 end
 

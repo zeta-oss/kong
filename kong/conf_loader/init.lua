@@ -577,6 +577,10 @@ local CONF_INFERENCES = {
   cluster_ca_cert = { typ = "string" },
   cluster_server_name = { typ = "string" },
   kic = { typ = "boolean" },
+  consul_scheme = { enum = { "http", "https" }, },
+  consul_host = { typ = "string" },
+  consul_port = { typ = "number" },
+  consul_timeout = { typ = "number" },
 }
 
 
