@@ -367,7 +367,8 @@ local function build_cache_key(entity, item, schema, parent_fk, child_key)
 
     elseif item[k] == nil then
       if k == child_key then
-        if parent_fk.id and next(parent_fk, "id") == nil then
+        -- if parent_fk is 'id' and is non-composite
+        if next(parent_fk) == "id" and next(parent_fk, "id") == nil then
           table.insert(ck, parent_fk.id)
         else
           -- FIXME support building cache_keys with fk's whose pk is not id
