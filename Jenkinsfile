@@ -14,6 +14,19 @@ pipeline {
     }
     stages {
         stage('Build Kong') {
+            when {
+                beforeAgent true
+                anyOf {
+                    allOf {
+                        buildingTag()
+                        not { triggeredBy 'TimerTrigger' }
+                    }
+                    allOf {
+                        triggeredBy 'TimerTrigger'
+                        anyOf { branch 'master'; branch 'next' }
+                    }
+                }
+            }
             agent {
                 node {
                     label 'bionic'
@@ -30,6 +43,13 @@ pipeline {
             }
         }
         stage('Integration Tests') {
+            when {
+                beforeAgent true
+                allOf {
+                    buildingTag()
+                    not { triggeredBy 'TimerTrigger' }
+                }
+            }
             parallel {
                 stage('dbless') {
                     agent {
