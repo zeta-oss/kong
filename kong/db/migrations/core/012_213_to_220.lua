@@ -1,4 +1,9 @@
+local uuid = require "resty.jit-uuid"
+
 local fmt = string.format
+
+
+local default_ws_id = uuid.generate_v4()
 
 
 local function pg_clean_repeated_targets(connector, upstream_id)
@@ -22,6 +27,22 @@ local function pg_clean_repeated_targets(connector, upstream_id)
 
     end
   end
+end
+
+
+local function pg_fill_targets_cache_key(connector)
+  assert(connector:connect_migrations())
+
+  local _, err = connector:query([[
+    UPDATE "targets"
+    SET cache_key = CONCAT(target, ':', upstream_id, ':',
+                           (SELECT id FROM workspaces WHERE name = 'default'));
+  ]])
+  if err then
+    return nil, err
+  end
+
+  return true
 end
 
 
@@ -97,6 +118,78 @@ local function c_clean_repeated_targets(connector, upstream_id)
 end
 
 
+local function c_get_default_ws(connector)
+  local rows, err = connector:query("SELECT id FROM workspaces WHERE name='default'")
+  if err then
+    return nil, err
+  end
+
+  if not rows
+     or not rows[1]
+     or not rows[1].id
+  then
+    return nil
+  end
+
+  return rows[1].id
+end
+
+
+local function c_create_default_ws(connector)
+  local cassandra = require "cassandra"
+  local created_at = ngx.time() * 1000
+
+  local _, err = connector:query("INSERT INTO workspaces(id, name, created_at) VALUES (?, 'default', ?)", {
+    cassandra.uuid(default_ws_id),
+    cassandra.timestamp(created_at)
+  })
+  if err then
+    return nil, err
+  end
+
+  return c_get_default_ws(connector) or default_ws_id
+end
+
+
+local function c_ensure_default_ws(connector)
+
+  local default_ws, err = c_get_default_ws(connector)
+  if err then
+    return nil, err
+  end
+
+  if default_ws then
+    return default_ws
+  end
+
+  return c_create_default_ws(connector)
+end
+
+
+local function c_fill_targets_cache_key(connector)
+  local cassandra = require "cassandra"
+  local coordinator = assert(connector:connect_migrations())
+  local default_ws, err = c_ensure_default_ws(connector)
+  if err then
+    return nil, err
+  end
+
+  for tgt, err in coordinator:iterate("SELECT id, target, upstream_id FROM targets") do
+    if err then
+      return nil, err
+    end
+
+    local _, err = connector:query(
+      "UPDATE targets SET cache_key = ? WHERE id = ?", {
+        tgt.target .. ":" .. tgt.upstream_id .. ":" .. default_ws,
+        cassandra.uuid(tgt.id),
+      })
+    if err then
+      return nil, err
+    end
+  end
+end
+
 -- remove repeated targets, the older ones are not useful anymore. targets with
 -- weight 0 will be kept, as we cannot tell which were deleted and which were
 -- explicitly set as 0.
@@ -150,9 +243,22 @@ return {
         -- Do nothing, accept existing state
       END;
       $$;
+
+      DO $$
+      BEGIN
+        ALTER TABLE IF EXISTS ONLY "targets" ADD "cache_key" TEXT UNIQUE;
+      EXCEPTION WHEN DUPLICATE_COLUMN THEN
+        -- Do nothing, accept existing state
+      END;
+      $$;
     ]],
     teardown = function(connector)
       local _, err = pg_remove_unused_targets(connector)
+      if err then
+        return nil, err
+      end
+
+      _, err = pg_fill_targets_cache_key(connector)
       if err then
         return nil, err
       end
@@ -173,9 +279,17 @@ return {
 
       ALTER TABLE routes ADD request_buffering boolean;
       ALTER TABLE routes ADD response_buffering boolean;
+
+      ALTER TABLE targets ADD cache_key text;
+      CREATE INDEX IF NOT EXISTS targets_cache_key_idx ON targets(cache_key);
     ]],
     teardown = function(connector)
       local _, err = c_remove_unused_targets(connector)
+      if err then
+        return nil, err
+      end
+
+      _, err = c_fill_targets_cache_key(connector)
       if err then
         return nil, err
       end

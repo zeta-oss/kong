@@ -15,6 +15,7 @@ return {
   name = "targets",
   dao = "kong.db.dao.targets",
   primary_key = { "id" },
+  cache_key = { "target", "upstream" },
   endpoint_key = "target",
   workspaceable = true,
   fields = {
