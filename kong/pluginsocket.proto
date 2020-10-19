@@ -1,0 +1,171 @@
+syntax = "proto3";
+package kong_plugin_protocol;
+option go_package = "./kong_plugin_protocol";
+
+message ServiceKey {
+    string id = 1;
+}
+
+message CertificateKey {
+    string id = 1;
+}
+
+message Route {
+    string id = 1;
+    int64 created_at = 2;
+    int64 updated_at = 3;
+    string name = 4;
+    repeated string protocols = 5;
+    repeated string methods = 6;
+    repeated string hosts = 7;
+    repeated string paths = 8;
+    repeated string headers = 9;
+    int32 https_redirect_status_code = 10;
+    int32 regex_priority = 11;
+    bool strip_path = 12;
+    bool preserve_host = 13;
+    repeated string snis = 14;
+    repeated string sources = 15;
+    repeated string destinations = 16;
+    repeated string tags = 17;
+    ServiceKey service = 18;
+}
+
+message Service {
+    string id = 1;
+    int64 created_at = 2;
+    int64 updated_at = 3;
+    string name = 4;
+    int32 retries = 5;
+    string protocol = 6;
+    string host = 7;
+    int32 port = 8;
+    string path = 9;
+    int32 connect_timeout = 10;
+    int32 write_timeout = 11;
+    int32 read_timeout = 12;
+    repeated string tags = 13;
+    CertificateKey client_certificate = 14;
+}
+
+message Consumer {
+    string id = 1;
+    int64 created_at = 2;
+    string username = 3;
+    string custom_id = 4;
+    repeated string tags = 5;
+}
+
+message AuthenticatedCredential {
+    string id = 1;
+    string consumer_id = 2;
+}
+
+message MemoryStats {
+    message LuaSharedDicts {
+        message DictStats {
+            int64 allocated_slabs = 1;
+            int64 capacity = 2;
+        }
+        DictStats kong = 1;
+        DictStats kong_db_cache = 2;
+    }
+    message WorkerLuaVm {
+        int64 http_allocated_gc = 1;
+        int64 pid = 2;
+    }
+    LuaSharedDicts lua_shared_dicts = 1;
+    repeated WorkerLuaVm workers_lua_vms = 2;
+}
+
+
+message CmdGetPluginNames {}
+
+message CmdGetPluginInfo {
+    string name = 1;
+}
+
+message CmdStartInstance {
+    string name = 1;
+    string config = 2;
+}
+
+message CmdGetInstanceStatus {
+    int32 instance_id = 1;
+}
+
+message CmdCloseInstance {
+    int32 instance_id = 1;
+}
+
+message CmdHandleEvent {
+    int32 instance_id = 1;
+    string event_name = 2;
+}
+
+message Map {
+    map<string, string> m = 1;
+}
+
+message StepData {
+    int64 event_id = 1;
+    oneof data {
+        bool b = 31;
+        int64 i = 32;
+        double f = 33;
+        string s = 34;
+        Map m = 35;
+
+        string error = 36;
+
+        AuthenticatedCredential credential = 40;
+        Route route = 41;
+        Service service = 42;
+        Consumer consumer = 43;
+        MemoryStats memory_stats = 44;
+    }
+}
+
+message RpcCall {
+    int64 sequence = 1;
+    oneof call {
+        CmdGetPluginNames cmd_get_plugin_names = 31;
+        CmdGetPluginInfo cmd_get_plugin_info = 32;
+        CmdStartInstance cmd_start_instance = 33;
+        CmdGetInstanceStatus cmd_get_instance_status = 34;
+        CmdCloseInstance cmd_close_instance = 35;
+        CmdHandleEvent cmd_handle_event = 36;
+        StepData cmd_step = 37;
+    };
+}
+
+message PluginNames {
+    repeated string names = 1;
+}
+
+message PluginInfo {
+    string name = 1;
+    int64 updated_at = 2;
+    int64 loaded_at = 3;
+    repeated string phases = 4;
+    string version = 5;
+    int32 priority = 6;
+    string schema = 7;
+}
+
+message InstanceStatus {
+    string name = 1;
+    int32 instance_id = 2;
+    string config = 3;
+    int64 started_at = 4;
+}
+
+message RpcReturn {
+    int64 sequence = 1;
+    oneof return {
+        PluginNames plugin_names = 31;
+        PluginInfo plugin_info = 32;
+        InstanceStatus instance_status = 33;
+        StepData step_data = 34;
+    }
+}
