@@ -588,6 +588,5 @@ return {
   cassandra = cassandra,
   ws_migrate_plugin = ws_migrate_plugin,
   cassandra_get_default_ws = cassandra_get_default_ws,
-  cassandra_create_default_ws = cassandra_create_default_ws,
   cassandra_ensure_default_ws = cassandra_ensure_default_ws,
 }
