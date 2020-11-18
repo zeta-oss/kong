@@ -1,3 +1,6 @@
+local cassandra = require "cassandra"
+local uuid = require "resty.jit-uuid"
+
 -- remove repeated targets, the older ones are not useful anymore. targets with
 -- weight 0 will be kept, as we cannot tell which were deleted and which were
 -- explicitly set as 0.
@@ -104,6 +107,36 @@ return {
       ALTER TABLE routes ADD request_buffering boolean;
       ALTER TABLE routes ADD response_buffering boolean;
     ]],
+
+    up_f = function(connector)
+      local coordinator = assert(connector:get_stored_connection())
+      local rows, err = coordinator:execute("SELECT id FROM workspaces WHERE name='default'", nil, {
+        consistency = cassandra.consistencies.serial,
+      })
+      if err then
+        return nil, err
+      end
+
+      if rows and rows[1] and rows[1].id then
+        -- default workspace already exists (possibly due to reentrant migrations), exiting
+        return true
+      end
+
+      local created_at = ngx.time() * 1000
+
+      local _, err = coordinator:execute("INSERT INTO workspaces(id, name, created_at) VALUES (?, 'default', ?)", {
+        cassandra.uuid(uuid.generate_v4()),
+        cassandra.timestamp(created_at),
+      }, {
+        consistency = cassandra.consistencies.quorum,
+      })
+      if err then
+        return nil, err
+      end
+
+      return true
+    end,
+
     teardown = function(connector)
       local coordinator = assert(connector:get_stored_connection())
       local _, err = c_remove_unused_targets(coordinator)
