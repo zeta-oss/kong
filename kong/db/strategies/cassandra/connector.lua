@@ -998,8 +998,8 @@ do
       error("name must be a string", 2)
     end
 
-    if type(up_cql) ~= "string" then
-      error("up_cql must be a string", 2)
+    if type(up_cql) ~= "string" and type(up_cql) ~= "function" then
+      error("up_cql must be a string or function", 2)
     end
 
     local conn = self:get_stored_connection()
@@ -1007,25 +1007,34 @@ do
       error("no connection")
     end
 
-    local t_cql = pl_stringx.split(up_cql, ";")
+    if type(up_cql) == "string" then
 
-    for i = 1, #t_cql do
-      local cql = pl_stringx.strip(t_cql[i])
-      if cql ~= "" then
-        local res, err = conn:execute(cql)
-        if not res then
-          if string.find(err, "Column .- was not found in table")
-          or string.find(err, "[Ii]nvalid column name")
-          or string.find(err, "[Uu]ndefined column name")
-          or string.find(err, "No column definition found for column")
-          or string.find(err, "Undefined name .- in selection clause")
-          then
-            log.warn("ignored error while running '%s' migration: %s (%s)",
-                     name, err, cql:gsub("\n", " "):gsub("%s%s+", " "))
-          else
-            return nil, err
+      local t_cql = pl_stringx.split(up_cql, ";")
+
+      for i = 1, #t_cql do
+        local cql = pl_stringx.strip(t_cql[i])
+        if cql ~= "" then
+          local res, err = conn:execute(cql)
+          if not res then
+            if string.find(err, "Column .- was not found in table")
+            or string.find(err, "[Ii]nvalid column name")
+            or string.find(err, "[Uu]ndefined column name")
+            or string.find(err, "No column definition found for column")
+            or string.find(err, "Undefined name .- in selection clause")
+            then
+              log.warn("ignored error while running '%s' migration: %s (%s)",
+                       name, err, cql:gsub("\n", " "):gsub("%s%s+", " "))
+            else
+              return nil, err
+            end
           end
         end
+      end
+
+    else -- type(up_cql) == "function"
+      local pok, perr, err = xpcall(up_cql, debug.traceback, self)
+      if not pok or err then
+        return nil, perr or err
       end
     end
 
