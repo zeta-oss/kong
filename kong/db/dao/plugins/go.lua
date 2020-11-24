@@ -1,8 +1,10 @@
-local cjson = require("cjson.safe")
-local ngx_ssl = require("ngx.ssl")
-local msgpack = require "MessagePack"
+local cjson = require "cjson.safe"
+local ngx_ssl = require "ngx.ssl"
 local reports = require "kong.reports"
 local raw_log = require "ngx.errlog".raw_log
+local protoc = require "protoc"
+local pb = require "pb"
+require "lua_pack"
 
 
 local kong = kong
@@ -122,7 +124,89 @@ do
   end
 end
 
+local msg_id = 0
+local function rpc_call(method, data)
+  local c, err = assert(ngx.socket.connect("unix:" .. go.socket_path()))
 
+  msg_id = msg_id + 1
+  local msg = assert(pb.encode(".kong_plugin_protocol.RpcCall", {
+    sequence = msg_id,
+    call = { [method] = data },
+  }))
+
+  assert (c:send(string.pack("L", #msg)))
+  assert (c:send(msg))
+
+  msg, err = c:receive(4)   -- uint32
+  if not msg then
+    return nil, err
+  end
+  local _, msg_len = string.unpack(msg, "L")
+
+  msg, err = c:receive(msg_len)
+  if not msg then
+    return nil, err
+  end
+  c:setkeepalive()
+
+  msg = assert(pb.decode(".kong_plugin_protocol.RpcReturn", msg))
+  assert(msg.sequence == msg_id)
+
+  return msg["return"]
+end
+
+
+local function rpc_start_instance(name, config)
+  local r, err = rpc_call("cmd_start_instance", {
+    name = name,
+    config = config,
+  })
+  if not r then
+    return nil, err
+  end
+  return r.instance_status and r.instance_status.instance_id
+end
+
+
+local function rpc_handle_event(instance_id, phase)
+  local r, err = rpc_call("cmd_handle_event", {
+    instance_id = instance_id,
+    event_name = phase,
+  })
+  if not r then
+    return nil, err
+  end
+
+  return r.step_data
+end
+
+
+local function rpc_step(event_id, step_res)
+  local r, err = rpc_call("cmd_step", {
+    event_id = event_id,
+    data = step_res,
+  })
+  if not r then
+    return nil, err
+  end
+
+  return r.step_data
+end
+
+
+local function rpc_close_instance(instance_id)
+  local r, err = rpc_call("cmd_close_instance", {
+    instance_id = instance_id,
+  })
+  if not r then
+    return nil, err
+  end
+
+  return true
+end
+
+
+--[==[
 -- This is the MessagePack-RPC implementation
 local rpc_call
 do
@@ -199,7 +283,7 @@ do
     end
   end
 end
-
+--]==]
 
 local function fix_mmap(t)
   local o, empty = {}, true
