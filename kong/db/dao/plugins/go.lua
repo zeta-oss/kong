@@ -11,8 +11,6 @@ local kong = kong
 local ngx = ngx
 local ngx_timer_at = ngx.timer.at
 local cjson_encode = cjson.encode
-local mp_pack = msgpack.pack
-local mp_unpacker = msgpack.unpacker
 local ngx_INFO = ngx.INFO
 
 local go = {}
@@ -24,18 +22,9 @@ local reset_and_get_instance
 local save_for_later = {}
 
 
--- add MessagePack empty array/map
-
-msgpack.packers['function'] = function (buffer, f)
-  f(buffer)
-end
-
-local function mp_empty_array(buffer)
-  msgpack.packers['array'](buffer, {}, 0)
-end
-
-local function mp_empty_map(buffer)
-  msgpack.packers['map'](buffer, {}, 0)
+do
+  local p = protoc.new()
+  p:loadfile("kong/pluginsocket.proto")
 end
 
 
@@ -164,7 +153,7 @@ local function rpc_start_instance(name, config)
   if not r then
     return nil, err
   end
-  return r.instance_status and r.instance_status.instance_id
+  return r.instance_status
 end
 
 
@@ -316,7 +305,7 @@ local function index_table(table, field)
   end
 
   local res = table
-  for segment, e in ngx.re.gmatch(field, "\\w+", "o") do
+  for segment in ngx.re.gmatch(field, "\\w+", "o") do
     if res[segment[0]] then
       res = res[segment[0]]
     else
@@ -444,10 +433,7 @@ end
 
 
 local function bridge_loop(instance_id, phase)
-  local step_in, err = rpc_call("plugin.HandleEvent", {
-    InstanceId = instance_id,
-    EventName = phase,
-  })
+  local step_in, err = rpc_handle_event(instance_id, phase)
   if not step_in then
     return step_in, err
   end
@@ -463,12 +449,10 @@ local function bridge_loop(instance_id, phase)
       step_in.Data.Method,
       step_in.Data.Args)
 
-    local step_method, step_res = get_step_method(step_in, pdk_res, pdk_err)
+    --local step_method, step_res = get_step_method(step_in, pdk_res, pdk_err)
+    local step_res = pdk_res  -- TODO: some method-result type mucking
 
-    step_in, err = rpc_call(step_method, {
-      EventId = event_id,
-      Data = step_res,
-    })
+    step_in, err = rpc_step(event_id, step_res)
     if not step_in then
       return step_in, err
     end
@@ -529,10 +513,7 @@ do
       instance_info.id = nil
     end
 
-    local status, err = rpc_call("plugin.StartInstance", {
-      Name = plugin_name,
-      Config = cjson_encode(conf)
-    })
+    local status, err = rpc_start_instance(plugin_name, cjson_encode(conf))
     if status == nil then
       kong.log.err("starting instance: ", err)
       -- remove claim, some other thread might succeed
@@ -540,18 +521,18 @@ do
       error(err)
     end
 
-    instance_info.id = status.Id
+    instance_info.id = status.instance_id
     instance_info.conf = conf
     instance_info.seq = conf.__seq__
-    instance_info.Config = status.Config
+    instance_info.Config = status.config
 
     if old_instance_id then
       -- there was a previous instance with same key, close it
-      rpc_call("plugin.CloseInstance", old_instance_id)
+      rpc_close_instance(old_instance_id)
       -- don't care if there's an error, maybe other thread closed it first.
     end
 
-    return status.Id
+    return status.instance_id
   end
 end
 
