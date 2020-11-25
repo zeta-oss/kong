@@ -2,6 +2,7 @@ local cjson = require "cjson.safe"
 local ngx_ssl = require "ngx.ssl"
 local reports = require "kong.reports"
 local raw_log = require "ngx.errlog".raw_log
+local msgpack = require "MessagePack"
 local protoc = require "protoc"
 local pb = require "pb"
 require "lua_pack"
@@ -120,17 +121,16 @@ local function rpc_call(method, data)
   msg_id = msg_id + 1
   local msg = assert(pb.encode(".kong_plugin_protocol.RpcCall", {
     sequence = msg_id,
-    call = { [method] = data },
+    [method] = data,
   }))
-
-  assert (c:send(string.pack("L", #msg)))
+  assert (c:send(string.pack("I", #msg)))
   assert (c:send(msg))
 
   msg, err = c:receive(4)   -- uint32
   if not msg then
     return nil, err
   end
-  local _, msg_len = string.unpack(msg, "L")
+  local _, msg_len = string.unpack(msg, "I")
 
   msg, err = c:receive(msg_len)
   if not msg then
@@ -139,9 +139,10 @@ local function rpc_call(method, data)
   c:setkeepalive()
 
   msg = assert(pb.decode(".kong_plugin_protocol.RpcReturn", msg))
+  kong.log.debug("decoded: "..cjson.encode(msg))
   assert(msg.sequence == msg_id)
 
-  return msg["return"]
+  return msg
 end
 
 
