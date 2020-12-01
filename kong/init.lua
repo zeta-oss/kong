@@ -194,23 +194,33 @@ do
       preserved[key] = ngx.shared.kong:get(key) -- ignore errors
     end
 
-    local current_page = preserved["kong:cache:kong_db_cache:curr_mlcache"] or 1
-    local suffix = current_page == 1 and "" or "_2"
+    local current_page
+    local old_page = preserved["kong:cache:kong_db_cache:curr_mlcache"]
+    if old_page then
+      current_page = old_page == 1 and 2 or 1
+    else
+      current_page = 1
+    end
 
-    local shms = {
+    preserved["kong:cache:kong_db_cache:curr_mlcache"] = current_page
+    preserved["kong:cache:kong_core_db_cache:curr_mlcache"] = current_page
+
+    local flush_suffix = current_page == 1 and "" or "_2"
+
+    local shms_to_flush = {
       "kong",
       "kong_locks",
       "kong_healthchecks",
       "kong_cluster_events",
       "kong_rate_limiting_counters",
-      "kong_core_db_cache" .. suffix,
-      "kong_core_db_cache_miss" .. suffix,
-      "kong_db_cache" .. suffix,
-      "kong_db_cache_miss" .. suffix,
+      "kong_core_db_cache" .. flush_suffix,
+      "kong_core_db_cache_miss" .. flush_suffix,
+      "kong_db_cache" .. flush_suffix,
+      "kong_db_cache_miss" .. flush_suffix,
       "kong_clustering",
     }
 
-    for _, shm in ipairs(shms) do
+    for _, shm in ipairs(shms_to_flush) do
       local dict = ngx.shared[shm]
       if dict then
         dict:flush_all()
