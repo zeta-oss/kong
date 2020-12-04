@@ -761,6 +761,10 @@ do
   local DECLARATIVE_FLIPS_TTL = constants.DECLARATIVE_FLIPS.ttl
 
   function declarative.load_into_cache_with_events(entities, meta, hash)
+    if ngx.worker.exiting() then
+      return nil, "exiting"
+    end
+
     local ok, err = ngx.shared.kong:add(DECLARATIVE_FLIPS_NAME, 0, DECLARATIVE_FLIPS_TTL)
     if not ok then
       if err == "exists" then
@@ -805,11 +809,17 @@ do
       assert(bytes == #json, "incomplete config sent to the stream subsystem")
     end
 
+    if ngx.worker.exiting() then
+      ngx.shared.kong:delete(DECLARATIVE_FLIPS_NAME)
+      return nil, "exiting"
+    end
+
     local default_ws
     ok, err, default_ws = declarative.load_into_cache(entities, meta, hash, SHADOW)
     if ok then
       ok, err = kong.worker_events.post("declarative", "flip_config", default_ws)
       if ok ~= "done" then
+        ngx.shared.kong:delete(DECLARATIVE_FLIPS_NAME)
         return nil, "failed to flip declarative config cache pages: " .. (err or ok)
       end
 
@@ -820,7 +830,19 @@ do
 
     ok, err = kong.core_cache:save_curr_page()
     if not ok then
-      return nil, "failed to persist cache page number inside shdict: " .. err
+      ngx.shared.kong:delete(DECLARATIVE_FLIPS_NAME)
+      return nil, "failed to persist core cache page number inside shdict: " .. err
+    end
+
+    ok, err = kong.cache:save_curr_page()
+    if not ok then
+      ngx.shared.kong:delete(DECLARATIVE_FLIPS_NAME)
+      return nil, "failed to persist kong cache page number inside shdict: " .. err
+    end
+
+    if ngx.worker.exiting() then
+      ngx.shared.kong:delete(DECLARATIVE_FLIPS_NAME)
+      return nil, "exiting"
     end
 
     local sleep_left = DECLARATIVE_FLIPS_TTL
@@ -838,8 +860,12 @@ do
       end
 
       ngx.sleep(sleep_time)
-      sleep_left = sleep_left - sleep_time
 
+      if ngx.worker.exiting() then
+        ngx.shared.kong:delete(DECLARATIVE_FLIPS_NAME)
+        return nil, "exiting"
+      end
+      sleep_left = sleep_left - sleep_time
     end
 
     ngx.shared.kong:delete(DECLARATIVE_FLIPS_NAME)

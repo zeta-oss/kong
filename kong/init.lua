@@ -188,6 +188,12 @@ do
   }
 
   reset_kong_shm = function()
+    -- Prevent POST /config from happening while initializing
+    ngx.shared.kong:add(
+      constants.DECLARATIVE_FLIPS.name,
+      0,
+      constants.DECLARATIVE_FLIPS.ttl)
+
     local preserved = {}
 
     for _, key in ipairs(preserve_keys) do
@@ -211,6 +217,7 @@ do
       "kong",
       "kong_locks",
       "kong_healthchecks",
+      "kong_process_events",
       "kong_cluster_events",
       "kong_rate_limiting_counters",
       "kong_core_db_cache" .. flush_suffix,
@@ -220,10 +227,23 @@ do
       "kong_clustering",
     }
 
-    for _, shm in ipairs(shms_to_flush) do
+    for name, shm in ipairs(shms_to_flush) do
       local dict = ngx.shared[shm]
       if dict then
         dict:flush_all()
+        -- if a POST /config arrives to another worker exactly on this line, it might
+        -- interfere with the regular initialization
+        if name == "kong" then
+          -- Keep preventing POST /config from happening while initializing
+          -- (value was just flushed) from now on
+          ngx.shared.kong:add(
+            constants.DECLARATIVE_FLIPS.name,
+            0,
+            constants.DECLARATIVE_FLIPS.ttl)
+        elseif name == "kong_process_events" then
+          -- FIXME
+
+        end
         dict:flush_expired(0)
       end
     end
@@ -369,6 +389,12 @@ local function load_declarative_config(kong_config, entities, meta)
     ok, err = ngx.shared.kong:safe_set("declarative_config:loaded", true)
     if not ok then
       kong.log.warn("failed marking declarative_config as loaded: ", err)
+    end
+
+    -- Allow POST /config from now on
+    ok, err = ngx.shared.kong:delete(constants.DECLARATIVE_FLIPS.name)
+    if not ok then
+      kong.log.warn("failed deleting DECLARATIVE_FLIPS.name: ", err)
     end
 
     return true
