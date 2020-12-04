@@ -187,7 +187,8 @@ do
     "events:requests:go_plugins",
   }
 
-  reset_kong_shm = function()
+  reset_kong_shm = function(kong_config)
+
     local old_page = ngx.shared.kong:get("kong:cache:kong_db_cache:curr_mlcache")
     if old_page == nil -- fresh node, no need to reset anything
     then
@@ -218,8 +219,6 @@ do
     preserved["kong:cache:kong_db_cache:curr_mlcache"] = current_page
     preserved["kong:cache:kong_core_db_cache:curr_mlcache"] = current_page
 
-    local flush_suffix = current_page == 1 and "" or "_2"
-
     local shms_to_flush = {
       "kong",
       "kong_locks",
@@ -227,13 +226,33 @@ do
       "kong_process_events",
       "kong_cluster_events",
       "kong_rate_limiting_counters",
-      "kong_core_db_cache" .. flush_suffix,
-      "kong_core_db_cache_miss" .. flush_suffix,
-      "kong_db_cache" .. flush_suffix,
-      "kong_db_cache_miss" .. flush_suffix,
       "kong_clustering",
     }
 
+    local current_page, flush_suffix
+    if kong_config.declarative_config then
+      ngx.log(ngx.ERR, "Starting with new config")
+      -- declarative config found, load into the shadow page and then flip
+      current_page = old_page == 1 and 2 or 1
+
+      -- we must flush the shadow page before we load
+      flush_suffix = current_page == 1 and "" or "_2"
+      for _,v in ipairs({
+        "kong_core_db_cache" .. flush_suffix,
+        "kong_core_db_cache_miss" .. flush_suffix,
+        "kong_db_cache" .. flush_suffix,
+        "kong_db_cache_miss" .. flush_suffix,
+      }) do
+        table.insert(shms_to_flush, v)
+      end
+
+    else
+      ngx.log(ngx.ERR, "Starting without new config")
+      -- no config found; we want to preserve the cache that we have
+      -- we still want to reset locks, healthchecks, events, etc
+      -- Example: kong start without decl config, then http :8001/conf, then kong reload
+      current_page = old_page
+    end
     for name, shm in ipairs(shms_to_flush) do
       local dict = ngx.shared[shm]
       if dict then
@@ -447,25 +466,24 @@ local Kong = {}
 
 
 function Kong.init()
-  reset_kong_shm()
-
-  -- special math.randomseed from kong.globalpatches not taking any argument.
-  -- Must only be called in the init or init_worker phases, to avoid
-  -- duplicated seeds.
-  math.randomseed()
-
-  local pl_path = require "pl.path"
-  local conf_loader = require "kong.conf_loader"
-
   -- check if kong global is the correct one
   if not kong.version then
     error("configuration error: make sure your template is not setting a " ..
           "global named 'kong' (please use 'Kong' instead)")
   end
 
+  local pl_path = require "pl.path"
   -- retrieve kong_config
   local conf_path = pl_path.join(ngx.config.prefix(), ".kong_env")
+
+  local conf_loader = require "kong.conf_loader"
   local config = assert(conf_loader(conf_path, nil, { from_kong_env = true }))
+  reset_kong_shm(config)
+
+  -- special math.randomseed from kong.globalpatches not taking any argument.
+  -- Must only be called in the init or init_worker phases, to avoid
+  -- duplicated seeds.
+  math.randomseed()
 
   kong_global.init_pdk(kong, config, nil) -- nil: latest PDK
 
