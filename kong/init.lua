@@ -168,23 +168,28 @@ end
 local reset_kong_shm
 do
   local preserve_keys = {
-    "kong:node_id",
-    "kong:cache:kong_db_cache:curr_mlcache",
-    "kong:cache:kong_core_db_cache:curr_mlcache",
-    "cluster_events:at",
-    "events:requests",
-    "events:requests:http",
-    "events:requests:https",
-    "events:requests:h2c",
-    "events:requests:h2",
-    "events:requests:grpc",
-    "events:requests:grpcs",
-    "events:requests:ws",
-    "events:requests:wss",
-    "events:streams",
-    "events:streams:tcp",
-    "events:streams:tls",
-    "events:requests:go_plugins",
+    kong = {
+      "kong:node_id",
+      "kong:cache:kong_db_cache:curr_mlcache",
+      "kong:cache:kong_core_db_cache:curr_mlcache",
+      "cluster_events:at",
+      "events:requests",
+      "events:requests:http",
+      "events:requests:https",
+      "events:requests:h2c",
+      "events:requests:h2",
+      "events:requests:grpc",
+      "events:requests:grpcs",
+      "events:requests:ws",
+      "events:requests:wss",
+      "events:streams",
+      "events:streams:tcp",
+      "events:streams:tls",
+      "events:requests:go_plugins",
+    },
+    kong_process_events = {
+      "events-last",
+    },
   }
 
   reset_kong_shm = function(kong_config)
@@ -205,19 +210,13 @@ do
 
     local preserved = {}
 
-    for _, key in ipairs(preserve_keys) do
-      preserved[key] = ngx.shared.kong:get(key) -- ignore errors
+    for dict, keys in pairs(preserve_keys) do
+      local d = {}
+      for _, key in ipairs(keys) do
+        d[key] = ngx.shared.kong:get(key) -- ignore errors
+      end
+      preserved[dict] = d
     end
-
-    local current_page
-    if old_page then
-      current_page = old_page == 1 and 2 or 1
-    else
-      current_page = 1
-    end
-
-    preserved["kong:cache:kong_db_cache:curr_mlcache"] = current_page
-    preserved["kong:cache:kong_core_db_cache:curr_mlcache"] = current_page
 
     local shms_to_flush = {
       "kong",
@@ -253,6 +252,10 @@ do
       -- Example: kong start without decl config, then http :8001/conf, then kong reload
       current_page = old_page
     end
+
+    preserved.kong["kong:cache:kong_db_cache:curr_mlcache"] = current_page
+    preserved.kong["kong:cache:kong_core_db_cache:curr_mlcache"] = current_page
+
     for name, shm in ipairs(shms_to_flush) do
       local dict = ngx.shared[shm]
       if dict then
@@ -266,16 +269,15 @@ do
             constants.DECLARATIVE_FLIPS.name,
             0,
             constants.DECLARATIVE_FLIPS.ttl)
-        elseif name == "kong_process_events" then
-          -- FIXME
-
         end
         dict:flush_expired(0)
       end
     end
 
-    for _, key in ipairs(preserve_keys) do
-      ngx.shared.kong:set(key, preserved[key])
+    for dict, keys in pairs(preserve_keys) do
+      for _, key in ipairs(keys) do
+        ngx.shared.kong:set(key, preserved[dict][key])
+      end
     end
   end
 end
