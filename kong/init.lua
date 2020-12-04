@@ -188,6 +188,14 @@ do
   }
 
   reset_kong_shm = function()
+    local old_page = ngx.shared.kong:get("kong:cache:kong_db_cache:curr_mlcache")
+    if old_page == nil -- fresh node, no need to reset anything
+    then
+      ngx.shared.kong:set("kong:cache:kong_db_cache:curr_mlcache", 1)
+      ngx.shared.kong:set("kong:cache:kong_core_db_cache:curr_mlcache", 1)
+      ngx.log(ngx.ERR, "Starting fresh")
+      return
+    end
     -- Prevent POST /config from happening while initializing
     ngx.shared.kong:add(
       constants.DECLARATIVE_FLIPS.name,
@@ -201,7 +209,6 @@ do
     end
 
     local current_page
-    local old_page = preserved["kong:cache:kong_db_cache:curr_mlcache"]
     if old_page then
       current_page = old_page == 1 and 2 or 1
     else
