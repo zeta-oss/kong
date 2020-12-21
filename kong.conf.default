@@ -1334,3 +1334,19 @@
                                  # server.
                                  #
                                  # See https://github.com/openresty/lua-nginx-module#lua_socket_pool_size
+
+#untrusted_lua = on              # on | off | sandbox
+                                 # on: untrusted lua code has unrestricted
+                                 #     access to the global context
+                                 # sandbox: use a secure sandbox for running
+                                 #     untrusted lua code.
+                                 # off: untrusted lua code is never loaded
+
+#untrusted_lua_sandbox_requires =
+                                 # Comma-separated list of allowed requires
+                                 # for sandboxed untrusted lua code
+
+#untrusted_lua_sandbox_environment =
+                                 # Comma-separated list of global runtime
+                                 # variables available to sandboxed lua code
+                                 # environment
