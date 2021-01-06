@@ -23,8 +23,8 @@ describe("sandbox functions wrapper", function()
     -- load and reference module we can spy on
     load_s = spy.new(load)
     _G.load = load_s
-    sandbox = spy.new(require "kong.tools.sandbox")
-    package.loaded["kong.tools.sandbox"] = sandbox
+    sandbox = spy.new(require "sandbox")
+    package.loaded["sandbox"] = sandbox
     sandbox_helpers = require "kong.tools.sandbox_helpers"
   end)
 

@@ -1,6 +1,5 @@
 -- XXX Use sandbox.lua once it gets published
--- https://github.com/kikito/sandbox.lua/pull/2
-local _sandbox = require "kong.tools.sandbox"
+local _sandbox = require "sandbox"
 
 local utils = require "kong.tools.utils"
 

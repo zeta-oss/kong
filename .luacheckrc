@@ -53,14 +53,6 @@ files["spec-old-api/**/*.lua"] = {
     std = "ngx_lua+busted",
 }
 
-files["kong/tools/sandbox.lua"] = {
-    read_globals = {
-        "table.pack",
-        "table.unpack",
-        string = { fields = {rep = { read_only = false } } },
-    }
-}
-
 files["kong/tools/sandbox_helpers.lua"] = {
     read_globals = {
         "table.unpack",
