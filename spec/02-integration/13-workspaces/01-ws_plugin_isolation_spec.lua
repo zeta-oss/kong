@@ -1,6 +1,5 @@
 local cjson = require("cjson")
 local helpers = require("spec.helpers")
-local workspaces = require("kong.workspaces")
 
 for _, strategy in helpers.each_strategy() do
   describe(
@@ -35,7 +34,7 @@ for _, strategy in helpers.each_strategy() do
         bp.plugins:insert_ws({
           name = "key-auth",
           config = {key_names = {"notinuse"}},
-        }, workspaces.DEFAULT_WORKSPACE))
+        }, "default"))
        assert.True(default_ws_plugin.enabled)
 
        local sandbox_ws = assert(
