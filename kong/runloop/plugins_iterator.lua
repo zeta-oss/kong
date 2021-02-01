@@ -288,8 +288,12 @@ local function get_next(self)
     local combos = self.combos[name]
     if combos then
       local cfg = load_configuration_through_combos(ctx, combos, plugin)
+      -- In the case that we are loading the configuration from a named workspace,
+      -- we need the new config context to override any values that may already exist for
+      -- the table key that originated from the default workspace. If the context is a nil
+      -- value that means the plugin exists but is disabled in the named workspace.
+      plugins[name] = cfg
       if cfg then
-        plugins[name] = cfg
         if plugin.handler.response and plugin.handler.response ~= BasePlugin.response then
           ctx.buffered_proxying = true
         end
