@@ -34,6 +34,20 @@ local function log(lvl, ...)
 end
 
 
+local function get_page(self, shadow)
+  if #self.mlcaches == 2 and shadow then
+    return self.page == 2 and 1 or 2
+  end
+
+  return self.page or 1
+end
+
+
+local function get_mlcache(self, shadow)
+  return self.mlcaches[get_page(self, shadow)]
+end
+
+
 local _M = {}
 local mt = { __index = _M }
 
@@ -150,22 +164,13 @@ function _M.new(opts)
 end
 
 
-function _M:get_page(shadow)
-  if #self.mlcaches == 2 and shadow then
-    return self.page == 2 and 1 or 2
-  end
-
-  return self.page or 1
-end
-
-
 function _M:get(key, opts, cb, ...)
   if type(key) ~= "string" then
     error("key must be a string", 2)
   end
 
-  local page = self:get_page((opts or {}).shadow)
-  local v, err = self.mlcaches[page]:get(key, opts, cb, ...)
+  local shadow = opts and opts.shadow
+  local v, err = get_mlcache(self, shadow):get(key, opts, cb, ...)
   if err then
     return nil, "failed to get from node cache: " .. err
   end
@@ -183,8 +188,8 @@ function _M:get_bulk(bulk, opts)
     error("opts must be a table", 2)
   end
 
-  local page = self:get_page((opts or {}).shadow)
-  local res, err = self.mlcaches[page]:get_bulk(bulk, opts)
+  local shadow = opts and opts.shadow
+  local res, err = get_mlcache(self, shadow):get_bulk(bulk, opts)
   if err then
     return nil, "failed to get_bulk from node cache: " .. err
   end
@@ -200,7 +205,7 @@ function _M:safe_set(key, value, shadow)
     return nil, err
   end
 
-  local page = self:get_page(shadow)
+  local page = get_page(self, shadow)
   local shm_name = self.shm_names[page]
   return ngx.shared[shm_name]:safe_set(shm_name .. key, str_marshalled)
 end
@@ -211,8 +216,7 @@ function _M:probe(key, shadow)
     error("key must be a string", 2)
   end
 
-  local page = self:get_page(shadow)
-  local ttl, err, v = self.mlcaches[page]:peek(key)
+  local ttl, err, v = get_mlcache(self, shadow):peek(key)
   if err then
     return nil, "failed to probe from node cache: " .. err
   end
@@ -228,8 +232,7 @@ function _M:invalidate_local(key, shadow)
 
   log(DEBUG, "invalidating (local): '", key, "'")
 
-  local page = self:get_page(shadow)
-  local ok, err = self.mlcaches[page]:delete(key)
+  local ok, err = get_mlcache(self, shadow):delete(key)
   if not ok then
     log(ERR, "failed to delete entity from node cache: ", err)
   end
@@ -259,8 +262,7 @@ end
 function _M:purge(shadow)
   log(NOTICE, "purging (local) cache")
 
-  local page = self:get_page(shadow)
-  local ok, err = self.mlcaches[page]:purge(true)
+  local ok, err = get_mlcache(self, shadow):purge(true)
   if not ok then
     log(ERR, "failed to purge cache: ", err)
   end
@@ -273,7 +275,7 @@ function _M:flip()
   end
 
   log(DEBUG, "flipping current cache")
-  self.page = self:get_page() == 2 and 1 or 2
+  self.page = get_page(self) == 2 and 1 or 2
   self.mlcache = self.mlcaches[self.page]
 end
 
