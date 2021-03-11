@@ -97,15 +97,14 @@ local function init_watcher_consul()
 
     while formats_running["consul"] do
       print"RUNNING CONSUL WATCHER"
-      print(ngx.worker.id())
-      print(ngx.worker.pid())
 
       local ok, body, headers = http_get(kong.configuration.consul_scheme,
                                          kong.configuration.consul_host,
                                          kong.configuration.consul_port,
                                          "/v1/catalog/services",
                                          { index = consul_index },
-                                         3000)
+                                         kong.configuration.consul_timeout)
+
       if not ok and not body:match("timeout") then
         kong.log.err("failed querying Consul services: ", body)
         goto continue
@@ -125,10 +124,10 @@ local function init_watcher_consul()
         -- this loop will spin a lot.
         local new_consul_index = headers["X-Consul-Index"]
         consul_index = consul_index or new_consul_index
+        print("====== get new header ", consul_index, "  ", new_consul_index)
 
         if consul_index and consul_index ~= new_consul_index then
           print "CONSUL WATCHER: NEW INDEX"
-          print("worker = " .. ngx.worker.id())
 
           -- only update index if invalidation / reload was successful
           if invalidate_consul_upstreams() then
@@ -216,7 +215,7 @@ function service_discovery.load_targets(upstream)
 
       -- TODO what other fields are relevant?
       local weight = item.ServiceMeta
-                     and item.ServiceMeta.weight
+                     and tonumber(item.ServiceMeta.weight)
                      or  100
 
       table.insert(targets, {

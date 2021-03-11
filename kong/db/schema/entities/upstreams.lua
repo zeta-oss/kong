@@ -186,8 +186,6 @@ local r =  {
         required = false,
         fields = {
           { format = { type = "string", required = true, one_of = { "consul" } } },
-          { url = typedefs.url { required = true } },
-          { timeout = typedefs.timeout { default = 60000 } },
         }
     } },
     { client_certificate = { type = "foreign", reference = "certificates" }, },
