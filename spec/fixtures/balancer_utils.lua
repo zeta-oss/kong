@@ -354,8 +354,9 @@ do
     if host == "[::1]" then
       host = "[0000:0000:0000:0000:0000:0000:0000:0001]"
     end
-    local hard_timeout = ngx.now() + 70
-    while ngx.now() < hard_timeout do
+    local hard_timeout = 70
+
+    helpers.wait_until(function()
       local health = get_upstream_health(upstream_id, admin_port)
       if health then
         for _, d in ipairs(health.data) do
@@ -364,8 +365,8 @@ do
           end
         end
       end
-      ngx.sleep(0.1) -- poll-wait
-    end
+    end, hard_timeout)
+
     return false
   end
 
