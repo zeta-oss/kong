@@ -12,6 +12,7 @@ pipeline {
         KONG_PACKAGE_NAME = "kong"
         DOCKER_CLI_EXPERIMENTAL = "enabled"
         PULP = credentials('PULP_STAGE')
+        GITHUB_TOKEN = credentials('github_bot_access_token')
     }
     stages {
         stage('Release Per Commit') {
