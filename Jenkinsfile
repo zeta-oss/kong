@@ -11,6 +11,7 @@ pipeline {
         DOCKER_PASSWORD = "${env.DOCKER_CREDENTIALS_PSW}"
         KONG_PACKAGE_NAME = "kong"
         DOCKER_CLI_EXPERIMENTAL = "enabled"
+        PULP = credentials('PULP')
     }
     stages {
         stage('Release Per Commit') {
@@ -27,8 +28,6 @@ pipeline {
                 KONG_PACKAGE_NAME = "kong"
                 KONG_SOURCE_LOCATION = "${env.WORKSPACE}"
                 KONG_BUILD_TOOLS_LOCATION = "${env.WORKSPACE}/../kong-build-tools"
-                BINTRAY_USR = 'kong-inc_travis-ci@kong'
-                BINTRAY_KEY = credentials('bintray_travis_key')
                 AWS_ACCESS_KEY = credentials('AWS_ACCESS_KEY')
                 AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
                 CACHE = "false"
@@ -62,8 +61,6 @@ pipeline {
                         USER = 'travis'
                         KONG_SOURCE_LOCATION = "${env.WORKSPACE}"
                         KONG_BUILD_TOOLS_LOCATION = "${env.WORKSPACE}/../kong-build-tools"
-                        BINTRAY_USR = 'kong-inc_travis-ci@kong'
-                        BINTRAY_KEY = credentials('bintray_travis_key')
                         AWS_ACCESS_KEY = credentials('AWS_ACCESS_KEY')
                         AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
                         DEBUG = 0
@@ -91,8 +88,6 @@ pipeline {
                         RESTY_IMAGE_TAG = 'bionic'
                         KONG_SOURCE_LOCATION = "${env.WORKSPACE}"
                         KONG_BUILD_TOOLS_LOCATION = "${env.WORKSPACE}/../kong-build-tools"
-                        BINTRAY_USR = 'kong-inc_travis-ci@kong'
-                        BINTRAY_KEY = credentials('bintray_travis_key')
                         DEBUG = 0
                     }
                     steps {
@@ -113,8 +108,6 @@ pipeline {
                         RESTY_IMAGE_BASE = 'centos'
                         KONG_SOURCE_LOCATION = "${env.WORKSPACE}"
                         KONG_BUILD_TOOLS_LOCATION = "${env.WORKSPACE}/../kong-build-tools"
-                        BINTRAY_USR = 'kong-inc_travis-ci@kong'
-                        BINTRAY_KEY = credentials('bintray_travis_key')
                         PRIVATE_KEY_FILE = credentials('kong.private.gpg-key.asc')
                         PRIVATE_KEY_PASSPHRASE = credentials('kong.private.gpg-key.asc.password')
                         DEBUG = 0
@@ -138,8 +131,6 @@ pipeline {
                         RESTY_IMAGE_BASE = 'rhel'
                         KONG_SOURCE_LOCATION = "${env.WORKSPACE}"
                         KONG_BUILD_TOOLS_LOCATION = "${env.WORKSPACE}/../kong-build-tools"
-                        BINTRAY_USR = 'kong-inc_travis-ci@kong'
-                        BINTRAY_KEY = credentials('bintray_travis_key')
                         PRIVATE_KEY_FILE = credentials('kong.private.gpg-key.asc')
                         PRIVATE_KEY_PASSPHRASE = credentials('kong.private.gpg-key.asc.password')
                         DEBUG = 0
@@ -163,8 +154,6 @@ pipeline {
                         RESTY_IMAGE_BASE = 'debian'
                         KONG_SOURCE_LOCATION = "${env.WORKSPACE}"
                         KONG_BUILD_TOOLS_LOCATION = "${env.WORKSPACE}/../kong-build-tools"
-                        BINTRAY_USR = 'kong-inc_travis-ci@kong'
-                        BINTRAY_KEY = credentials('bintray_travis_key')
                         DEBUG = 0
                     }
                     steps {
@@ -187,8 +176,6 @@ pipeline {
                         RESTY_IMAGE_BASE = 'debian'
                         KONG_SOURCE_LOCATION = "${env.WORKSPACE}"
                         KONG_BUILD_TOOLS_LOCATION = "${env.WORKSPACE}/../kong-build-tools"
-                        BINTRAY_USR = 'kong-inc_travis-ci@kong'
-                        BINTRAY_KEY = credentials('bintray_travis_key')
                         AWS_ACCESS_KEY = credentials('AWS_ACCESS_KEY')
                         AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
                         DEBUG = 0
