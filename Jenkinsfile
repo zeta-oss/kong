@@ -46,13 +46,6 @@ pipeline {
             }
         }
         stage('Release') {
-            when {
-                beforeAgent true
-                allOf {
-                    buildingTag()
-                    not { triggeredBy 'TimerTrigger' }
-                }
-            }
             parallel {
                 stage('Ubuntu Xenial Release') {
                     agent {
