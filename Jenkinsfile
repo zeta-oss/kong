@@ -11,7 +11,7 @@ pipeline {
         DOCKER_PASSWORD = "${env.DOCKER_CREDENTIALS_PSW}"
         KONG_PACKAGE_NAME = "kong"
         DOCKER_CLI_EXPERIMENTAL = "enabled"
-        PULP = credentials('PULP')
+        PULP = credentials('PULP_STAGE')
     }
     stages {
         stage('Release Per Commit') {
