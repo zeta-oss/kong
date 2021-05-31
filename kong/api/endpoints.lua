@@ -226,26 +226,26 @@ local function query_entity(context, self, db, schema, method)
   end
 
   local key = self.params[schema.name]
-  if key then
-    if type(key) ~= "table" then
-      if type(key) == "string" then
-        key = { id = unescape_uri(key) }
-      else
-        key = { id = key }
-      end
+  local endpoint_key = schema.endpoint_key
+
+  if type(key) ~= "table" then
+    if type(key) == "string" then
+      key = { id = unescape_uri(key) }
+    else
+      key = { id = key }
+    end
+  end
+
+  if key.id and endpoint_key then
+    local inferred_value = arguments.infer_value(key.id, schema.fields[endpoint_key])
+
+    -- update
+    if is_update and not utils.is_valid_uuid(key.id) then
+      return dao[method or context .. "_by_" .. endpoint_key](dao, inferred_value, args, opts)
     end
 
-    if key.id and not utils.is_valid_uuid(key.id) then
-      local endpoint_key = schema.endpoint_key
-      if endpoint_key then
-        local field = schema.fields[endpoint_key]
-        local inferred_value = arguments.infer_value(key.id, field)
-        if is_update then
-          return dao[method or context .. "_by_" .. endpoint_key](dao, inferred_value, args, opts)
-        end
-
-        return dao[method or context .. "_by_" .. endpoint_key](dao, inferred_value, opts)
-      end
+    if not is_update and not utils.is_valid_uuid(key.id) then
+      return dao[method or context .. "_by_" .. endpoint_key](dao, inferred_value, opts)
     end
   end
 
