@@ -244,8 +244,14 @@ local function query_entity(context, self, db, schema, method)
       return dao[method or context .. "_by_" .. endpoint_key](dao, inferred_value, args, opts)
     end
 
-    if not is_update and not utils.is_valid_uuid(key.id) then
-      return dao[method or context .. "_by_" .. endpoint_key](dao, inferred_value, opts)
+    if not is_update then
+      local entity, err, err_t = dao[method or context .. "_by_" .. endpoint_key](dao, inferred_value, opts)
+      if entity and context ~= "delete" then
+        return entity
+      end
+      if err or not utils.is_valid_uuid(key.id) then
+        return nil, err, err_t
+      end
     end
   end
 

@@ -247,6 +247,15 @@ for _, strategy in helpers.each_strategy() do
             assert.same(service, json)
           end)
 
+          it("retrieves by uuid name", function()
+            local service = bp.named_services:insert({name = utils.uuid()}, { nulls = true })
+            local res  = client:get("/services/" .. service.name)
+            local body = assert.res_status(200, res)
+
+            local json = cjson.decode(body)
+            assert.same(service, json)
+          end)
+
           it("retrieves by utf-8 name and percent-escaped utf-8 name", function()
             local service = bp.services:insert({ name = "円" }, { nulls = true })
             local res  = client:get("/services/" .. service.name)
@@ -423,6 +432,7 @@ for _, strategy in helpers.each_strategy() do
         describe("DELETE", function()
           it("deletes a service", function()
             local service = bp.services:insert()
+            print(require"inspect"(service))
             local res  = client:delete("/services/" .. service.id)
             local body = assert.res_status(204, res)
             assert.equal("", body)

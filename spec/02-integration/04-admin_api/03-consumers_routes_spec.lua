@@ -312,6 +312,16 @@ describe("Admin API (#" .. strategy .. "): ", function()
           local json = cjson.decode(body)
           assert.same(consumer, json)
         end)
+        it("retrieves by uuid username", function()
+          local consumer = bp.consumers:insert({ username = utils.uuid() }, { nulls = true })
+          local res = assert(client:send {
+            method = "GET",
+            path = "/consumers/" .. consumer.username
+          })
+          local body = assert.res_status(200, res)
+          local json = cjson.decode(body)
+          assert.same(consumer, json)
+        end)
         it("retrieves by urlencoded username", function()
           local consumer = bp.consumers:insert(nil, { nulls = true })
           local res = assert(client:send {
