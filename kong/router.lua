@@ -3,7 +3,7 @@ local ipmatcher     = require "resty.ipmatcher"
 local lrucache      = require "resty.lrucache"
 local utils         = require "kong.tools.utils"
 local bit           = require "bit"
-
+local ffi           = require 'ffi'
 
 local hostname_type = utils.hostname_type
 local normalize     = require("kong.tools.uri").normalize
@@ -38,6 +38,11 @@ local SLASH         = byte("/")
 
 local ERR           = ngx.ERR
 local WARN          = ngx.WARN
+
+local max_regex_cache_size = nil
+if subsystem == 'http' then
+  max_regex_cache_size = ffi.C.ngx_http_lua_ffi_max_regex_cache_size()
+end
 
 
 local normalize_regex
@@ -1388,6 +1393,13 @@ function _M.new(routes)
       categorize_route_t(route_t, route_t.match_rules, categories)
       index_route_t(route_t, plain_indexes, prefix_uris, regex_uris,
                     wildcard_hosts, src_trust_funcs, dst_trust_funcs)
+    end
+
+    if max_regex_cache_size and #regex_uris > max_regex_cache_size then
+      log(WARN, string.format(
+        "The regex cache size (%d) is to small for the number of regex URIs (%d). " ..
+        "Consider setting lua_regex_cache_max_entries to a higher value.",
+        max_regex_cache_size, #regex_uris))
     end
   end
 
