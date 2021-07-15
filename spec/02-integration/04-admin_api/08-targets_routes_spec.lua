@@ -14,9 +14,13 @@ end
 
 local function client_send(req)
   local client = helpers.admin_client()
+  print("will send")
   local res = assert(client:send(req))
+  print("sent, read body")
   local status, body = res.status, res:read_body()
+  print("read, close")
   client:close()
+  print("closed")
   return status, body
 end
 

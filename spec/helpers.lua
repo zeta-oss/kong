@@ -634,7 +634,9 @@ function resty_http_proxy_mt:send(opts)
     opts.query = nil
   end
 
+  print("request ready, send")
   local res, err = self:request(opts)
+  print("res is ", require 'inspect'(res), " and err ", require 'inspect'(err))
   if res then
     -- wrap the read_body() so it caches the result and can be called multiple
     -- times
