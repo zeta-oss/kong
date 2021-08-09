@@ -7,10 +7,19 @@ local mt = {__index = _M}
 
 local UPSTREAM_PORT = 18088
 
+local is_in_docker
+
 function _M.new(opts)
+  local log = perf.new_logger("[docker]")
+  local _, err = perf.execute("grep 'docker' /proc/1/cgroup")
+  is_in_docker = not err
+  if is_in_docker then
+    log.debug("using docker driver inside a docker container")
+  end
+
   return setmetatable({
     opts = opts,
-    log = perf.new_logger("[docker]"),
+    log = log,
     psql_ct_id = nil,
     kong_ct_id = nil,
     worker_ct_id = nil,
@@ -105,11 +114,20 @@ local function inject_kong_admin_client(self, helpers)
     if not self.kong_ct_id then
       error("helpers.admin_client can only be called after perf.start_kong")
     end
-    local admin_port, err = get_container_port(self.kong_ct_id, "8001/tcp")
-    if not admin_port then
-      error("failed to get kong admin port: " .. (err or "nil"))
+    local admin_port = 8001
+    local admin_ip = "127.0.0.1"
+    if is_in_docker then
+      admin_ip, err = get_container_vip(self.kong_ct_id)
+      if not admin_ip then
+        error("failed to get kong container ip: " .. (err or "nil"))
+      end
+    else
+      admin_port, err = get_container_port(self.kong_ct_id, "8001/tcp")
+      if not admin_port then
+        error("failed to get kong admin port: " .. (err or "nil"))
+      end
     end
-    return helpers.http_client("127.0.0.1", admin_port, timeout or 60000)
+    return helpers.http_client(admin_ip, admin_port, timeout or 60000)
   end
   return helpers
 end
@@ -132,18 +150,25 @@ function _M:setup()
     return false, "psql is not running: " .. err
   end
 
-  local psql_port, err = get_container_port(self.psql_ct_id, "5432/tcp")
-  if not psql_port then
-    return false, "failed to get psql port: " .. (err or "nil")
-  end
-
   -- wait
   if not perf.wait_output("docker logs -f " .. self.psql_ct_id, "is ready to accept connections") then
     return false, "timeout waiting psql to start (5s)"
   end
 
-  self.log.info("psql is started to listen at port ", psql_port)
-  perf.setenv("KONG_PG_PORT", ""..psql_port)
+  if is_in_docker then
+    local psql_ip, err = get_container_vip(self.psql_ct_id)
+    if not psql_ip then
+      return false, "failed to get psql ip: " .. (err or "nil")
+    end
+    perf.setenv("KONG_PG_HOST", psql_ip)
+  else
+    local psql_port, err = get_container_port(self.psql_ct_id, "5432/tcp")
+    if not psql_port then
+      return false, "failed to get psql port: " .. (err or "nil")
+    end
+    self.log.info("psql is started to listen at port ", psql_port)
+    perf.setenv("KONG_PG_PORT", ""..psql_port)
+  end
   
   ngx.sleep(3) -- TODO: less flaky
 
@@ -214,6 +239,11 @@ function _M:start_upstreams(conf, port_count)
   local worker_vip, err = get_container_vip(self.worker_ct_id)
   if err then
     return false, "unable to read worker container's private IP: " .. err
+  end
+
+  -- wait
+  if not perf.wait_output("docker logs -f " .. self.worker_ct_id, " start worker process") then
+    return false, "timeout waiting worker to start (5s)"
   end
 
   self.log.info("worker is started")
@@ -288,8 +318,10 @@ function _M:start_kong(version, kong_conf)
 end
 
 function _M:stop_kong()
-  if self.kong_ct_id then
-    return perf.execute("docker stop " .. self.kong_ct_id)
+  local kong_ct_id = self.kong_ct_id
+  if kong_ct_id then
+    self.kong_ct_id = nil
+    return perf.execute("docker stop " .. kong_ct_id)
   end
 end
 
