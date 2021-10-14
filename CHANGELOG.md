@@ -73,6 +73,7 @@
   plugin configurations `service_tag`, `consumer_tag`, and `status_tag`.
   [#6230](https://github.com/Kong/kong/pull/6230)
   Thanks [onematchfox](https://github.com/onematchfox) for the patch!
+- The deprecated **BasePlugin** has been removed. [#7961](https://github.com/Kong/kong/pull/7961)
 
 [Back to TOC](#table-of-contents)
 
