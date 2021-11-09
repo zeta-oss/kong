@@ -106,6 +106,5 @@ return {
   entity_checks = {
     { mutually_required = { "config.aws_key", "config.aws_secret" } },
     { mutually_required = { "config.proxy_scheme", "config.proxy_url" } },
-    { mutually_exclusive = { "config.aws_region", "config.host" } },
   }
 }
