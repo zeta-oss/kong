@@ -10,28 +10,36 @@ local ngx_re_find = ngx.re.find
 local ngx_re_gsub = ngx.re.gsub
 
 
-local RESERVED_CHARACTERS = {
-  [0x21] = true, -- !
-  [0x23] = true, -- #
-  [0x24] = true, -- $
-  [0x25] = true, -- %
-  [0x26] = true, -- &
-  [0x27] = true, -- '
-  [0x28] = true, -- (
-  [0x29] = true, -- )
-  [0x2A] = true, -- *
-  [0x2B] = true, -- +
-  [0x2C] = true, -- ,
-  [0x2F] = true, -- /
-  [0x3A] = true, -- :
-  [0x3B] = true, -- ;
-  [0x3D] = true, -- =
-  [0x3F] = true, -- ?
-  [0x40] = true, -- @
-  [0x5B] = true, -- [
-  [0x5D] = true, -- ]
-}
+local UNRESERVED_CHARACTERS
+do
+  -- compose the set of characters that are explicitly designated as "unreserved"
+  --
+  -- ALPHA / DIGIT / "-" / "." / "_" / "~"
+  --
+  -- see https://datatracker.ietf.org/doc/html/rfc3986#section-2.3
 
+  UNRESERVED_CHARACTERS = {
+    [0x2D] = true, -- - hyphen
+    [0x2E] = true, -- . period
+    [0x5F] = true, -- _ underscore
+    [0x7E] = true, -- ~ tilde
+  }
+
+  -- A-Z
+  for i = 0x41, 0x5A do
+    UNRESERVED_CHARACTERS[i] = true
+  end
+
+  -- a-z
+  for i = 0x61, 0x7A do
+    UNRESERVED_CHARACTERS[i] = true
+  end
+
+  -- 0-9
+  for i = 0x30, 0x39 do
+    UNRESERVED_CHARACTERS[i] = true
+  end
+end
 
 local ESCAPE_PATTERN = "[^!#$&'()*+,/:;=?@[\\]A-Z\\d-_.~%]"
 
@@ -39,21 +47,30 @@ local TMP_OUTPUT = require("table.new")(16, 0)
 local DOT = string_byte(".")
 local SLASH = string_byte("/")
 
-local function percent_decode(m)
-    local hex = m[1]
-    local num = tonumber(hex, 16)
-    if RESERVED_CHARACTERS[num] then
-      return string_upper(m[0])
-    end
-
-    return string_char(num)
+local function decode(m)
+  return string_char(tonumber(m[1], 16))
 end
 
+---
+-- This function serves two purposes:
+--
+--  1. Decode percent-encoded values of unreserved characters
+--  2. Normalize all other hexidecimal values to uppercase
+--
+-- @tparam table m
+-- @treturn string
+local function normalize_encoded_values(m)
+    local hex = m[1]
+    local num = tonumber(hex, 16)
+    if UNRESERVED_CHARACTERS[num] then
+      return string_char(num)
+    end
+    return string_upper(m[0])
+end
 
 local function percent_escape(m)
   return string_format("%%%02X", string_byte(m[0]))
 end
-
 
 local function escape(uri)
   if ngx_re_find(uri, ESCAPE_PATTERN, "joi") then
@@ -63,18 +80,26 @@ local function escape(uri)
   return uri
 end
 
+local function unescape(uri)
+  if string_find(uri, "%", 1, true) then
+    uri = ngx_re_gsub(uri, "%([\\dA-F]{2})", decode, "joi")
+  end
+  return uri
+end
 
-local function unescape(uri, merge_slashes)
+---
+-- Normalize a uri for comparison.
+--
+-- See RFC 3986 section 6 for more details.
+local function normalize(uri, merge_slashes)
   -- check for simple cases and early exit
   if uri == "" or uri == "/" then
     return uri
   end
 
-  -- check if uri needs to be percent-decoded
-  -- (this can in some cases lead to unnecessary percent-decoding)
+  -- normalize percent-encoded values if any are found
   if string_find(uri, "%", 1, true) then
-    -- decoding percent-encoded triplets of unreserved characters
-    uri = ngx_re_gsub(uri, "%([\\dA-F]{2})", percent_decode, "joi")
+    uri = ngx_re_gsub(uri, "%([\\dA-F]{2})", normalize_encoded_values, "joi")
   end
 
   -- check if the uri contains a dot
@@ -152,11 +177,6 @@ local function unescape(uri, merge_slashes)
   end
 
   return table_concat(TMP_OUTPUT, nil, 1, output_n)
-end
-
-
-local function normalize(uri, merge_slashes)
-  return escape(unescape(uri, merge_slashes))
 end
 
 
