@@ -15,10 +15,10 @@ return {
   fields = {
     { id = typedefs.uuid, },
     { created_at     = typedefs.auto_timestamp_s },
-    { cert           = typedefs.certificate { required = true }, },
-    { key            = typedefs.key         { required = true }, },
-    { cert_alt       = typedefs.certificate { required = false }, },
-    { key_alt        = typedefs.key         { required = false }, },
+    { cert           = typedefs.certificate { required = true, referencable = true }, },
+    { key            = typedefs.key         { required = true, referencable = true }, },
+    { cert_alt       = typedefs.certificate { required = false, referencable = true }, },
+    { key_alt        = typedefs.key         { required = false, referencable = true }, },
     { tags           = typedefs.tags },
   },
 
