@@ -83,6 +83,7 @@ local field_schema = {
   { immutable = { type = "boolean" }, },
   { err = { type = "string" } },
   { encrypted = { type = "boolean" }, },
+  { referencable = { type = "boolean" }, },
 }
 
 
