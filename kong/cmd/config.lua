@@ -90,7 +90,7 @@ local function execute(args)
   local db = assert(DB.new(conf))
   assert(db:init_connector())
   assert(db:connect())
-  assert(db.vaults:load_vault_schemas(require "kong.constants".BUNDLED_VAULTS))
+  assert(db.vaults:load_vault_schemas(conf.loaded_vaults))
   assert(db.plugins:load_plugin_schemas(conf.loaded_plugins))
 
   _G.kong.db = db

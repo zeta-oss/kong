@@ -617,6 +617,7 @@ local CONF_INFERENCES = {
                   "emerg",
                 }
               },
+  vaults = { typ = "array" },
   plugins = { typ = "array" },
   anonymous_reports = { typ = "boolean" },
   nginx_optimizations = {
@@ -1543,6 +1544,28 @@ local function load(path, custom_conf, opts)
   -----------------------------
   -- Additional injected values
   -----------------------------
+
+  do
+    -- merge vaults
+    local vaults = {}
+
+    if #conf.vaults > 0 and conf.vaults[1] ~= "off" then
+      for i = 1, #conf.vaults do
+        local vault_name = pl_stringx.strip(conf.vaults[i])
+
+        if vault_name ~= "off" then
+          if vault_name == "bundled" then
+            vaults = tablex.merge(constants.BUNDLED_VAULTS, vaults, true)
+
+          else
+            vaults[vault_name] = true
+          end
+        end
+      end
+    end
+
+    conf.loaded_vaults = setmetatable(vaults, _nop_tostring_mt)
+  end
 
   do
     -- merge plugins

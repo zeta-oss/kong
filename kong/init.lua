@@ -537,7 +537,7 @@ function Kong.init()
     kong.clustering = require("kong.clustering").new(config)
   end
 
-  assert(db.vaults:load_vault_schemas(constants.BUNDLED_VAULTS))
+  assert(db.vaults:load_vault_schemas(config.loaded_vaults))
 
   -- Load plugins as late as possible so that everything is set up
   assert(db.plugins:load_plugin_schemas(config.loaded_plugins))

@@ -10,6 +10,7 @@ admin_error_log = logs/error.log
 status_access_log = off
 status_error_log = logs/status_error.log
 plugins = bundled
+vaults = bundled
 port_maps = NONE
 host_ports = NONE
 anonymous_reports = on
