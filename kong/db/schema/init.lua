@@ -28,6 +28,9 @@ local max          = math.max
 local sub          = string.sub
 
 
+local ADMIN_API_PHASE = require "kong.global".phases.admin_api
+
+
 local Schema       = {}
 Schema.__index     = Schema
 
@@ -958,6 +961,10 @@ function Schema:validate_field(field, value)
       field.len_min = 1
     end
 
+    if field.referencable and kong.vault.is_reference(value) then
+      return true
+    end
+
   elseif field.type == "function" then
     if type(value) ~= "function" then
       return nil, validation_errors.FUNCTION
@@ -1206,6 +1213,12 @@ local function run_entity_check(self, name, input, arg, full_check, errors)
       end
     else
       all_nil = false
+
+      -- Don't run if any of the values is a reference in a referencable field
+      local field = get_schema_field(self, fname)
+      if field.type == "string" and  field.referencable and kong.vault.is_reference(value) then
+        return
+      end
     end
     if errors[fname] then
       all_ok = false
@@ -1529,8 +1542,27 @@ end
 
 
 local function adjust_field_for_context(field, value, context, nulls, opts)
-  if context == "select" and value == null and field.required == true then
-    return handle_missing_field(field, value, opts)
+  if context == "select" then
+    if value == null and field.required == true then
+      return handle_missing_field(field, value, opts)
+    end
+
+    -- references are only resolved on proxy nodes
+    if  field.referencable
+    and field.type == "string"
+    and kong.configuration.role ~= "control_plane"
+    and ngx.ctx.KONG_PHASE ~= ADMIN_API_PHASE
+    then
+      local resolved_value, err = kong.vault.get(value)
+      -- TODO: hard or soft failure?
+      if not resolved_value then
+        if kong.vault.is_reference(value) then
+          kong.log.warn(err)
+        end
+      else
+        return resolved_value
+      end
+    end
   end
 
   if field.abstract then
