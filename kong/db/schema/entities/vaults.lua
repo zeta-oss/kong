@@ -9,6 +9,7 @@ return {
   workspaceable = true,
   subschema_key = "name",
   subschema_error = "vault '%s' is not installed",
+  dao = "kong.db.dao.vaults",
   fields = {
     { id = typedefs.uuid },
     -- note: prefix must be valid in a host part of vault reference uri:

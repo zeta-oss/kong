@@ -164,6 +164,7 @@ build = {
     ["kong.db.dao.plugins"] = "kong/db/dao/plugins.lua",
     ["kong.db.dao.plugins.go"] = "kong/db/dao/plugins/go.lua",
     ["kong.db.dao.tags"] = "kong/db/dao/tags.lua",
+    ["kong.db.dao.vaults"] = "kong/db/dao/vaults.lua",
     ["kong.db.dao.workspaces"] = "kong/db/dao/workspaces.lua",
     ["kong.db.declarative"] = "kong/db/declarative/init.lua",
     ["kong.db.schema"] = "kong/db/schema/init.lua",
@@ -188,6 +189,7 @@ build = {
     ["kong.db.schema.metaschema"] = "kong/db/schema/metaschema.lua",
     ["kong.db.schema.typedefs"] = "kong/db/schema/typedefs.lua",
     ["kong.db.schema.plugin_loader"] = "kong/db/schema/plugin_loader.lua",
+    ["kong.db.schema.vault_loader"] = "kong/db/schema/vault_loader.lua",
     ["kong.db.schema.topological_sort"] = "kong/db/schema/topological_sort.lua",
     ["kong.db.strategies"] = "kong/db/strategies/init.lua",
     ["kong.db.strategies.connector"] = "kong/db/strategies/connector.lua",
@@ -241,6 +243,7 @@ build = {
     ["kong.pdk.node"] = "kong/pdk/node.lua",
     ["kong.pdk.nginx"] = "kong/pdk/nginx.lua",
     ["kong.pdk.cluster"] = "kong/pdk/cluster.lua",
+    ["kong.pdk.vault"] = "kong/pdk/vault.lua",
 
     ["kong.plugins.base_plugin"] = "kong/plugins/base_plugin.lua",
 

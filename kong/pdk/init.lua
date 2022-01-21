@@ -235,6 +235,7 @@ local MAJOR_VERSIONS = {
       "router",
       "nginx",
       "cluster",
+      "vault",
     },
   },
 
