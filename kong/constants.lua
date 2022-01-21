@@ -49,7 +49,9 @@ for _, plugin in ipairs(deprecated_plugins) do
   deprecated_plugin_map[plugin] = true
 end
 
-local vaults = {}
+local vaults = {
+  "env",
+}
 
 local vault_map = {}
 for i = 1, #vaults do
