@@ -1567,6 +1567,26 @@ local function load(path, custom_conf, opts)
     conf.loaded_vaults = setmetatable(vaults, _nop_tostring_mt)
   end
 
+
+  ---------------------
+  -- Dereference Process-Secrets
+  ---------------------
+
+  do
+    local vault = require "kong.pdk.vault".new()
+    for k, v in pairs(conf) do
+      if vault.is_reference(v) then
+        local deref, deref_err = vault.get(v)
+        if deref ~= "nil" and not deref_err then
+          conf[k] = deref
+        end
+        if deref == "nil" or deref_err then
+          return nil, fmt("failed to dereference <%s> for config option %s. TODO. what to do here? fail the startup sequence?", k, v)
+        end
+      end
+    end
+  end
+
   do
     -- merge plugins
     local plugins = {}

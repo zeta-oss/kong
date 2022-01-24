@@ -57,15 +57,35 @@ local function get(reference)
   end
 
   local prefix = url.host
+  local resource = sub(url.path, 2)
+  local config = url.query
   local strategy
   local vault
   if IS_CLI then
     -- process reference
-    -- vault =
-    vault = { name = prefix } -- TODO: other configs from ENV
+    -- TODO: parse config options from URL
+    vault = { name = prefix, config = {}}
+    local v_mod = "kong.vaults." .. vault.name
+    local vault_m = require (v_mod)
+    -- TODO: is this required? Shouldn't .init() be loaded implicitly
+    if not vault_m then
+      -- TODO: what to do if that fails?
+      return nil, fmt("could not find vault %s", prefix)
+    end
+    vault_m.init()
+
+    local deref, deref_err = vault_m.get(vault.config, resource)
+    if not deref then
+      return nil, fmt("unable load value (%s): %s [%s]", resource, deref_err, tostring(reference))
+    end
+
+    return tostring(deref)
 
   else
     -- config reference
+    if not kong.db then
+      return nil, fmt("kong.db not yet loaded")
+    end
     local vaults = kong.db.vaults
     local cache_key = vaults:cache_key(prefix)
     vault, err = kong.core_cache:get(cache_key, nil, vaults.select_by_prefix, vaults, prefix)
@@ -84,7 +104,6 @@ local function get(reference)
     return nil, fmt("vault not installed (%s) [%s]", vault.name, tostring(reference))
   end
 
-  local resource = sub(url.path, 2)
   local value, err = strategy.get(vault.config, resource)
   if not value then
     return nil, fmt("unable load value (%s) from vault (%s): %s [%s]", resource, vault.name, err, tostring(reference))

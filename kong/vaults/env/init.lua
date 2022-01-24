@@ -38,7 +38,6 @@ local function get(conf, resource)
   if type(prefix) == "string" then
     resource = prefix .. resource
   end
-
   return ENV[upper(resource)]
 end
 

@@ -489,6 +489,7 @@ function Kong.init()
   -- retrieve kong_config
   local conf_path = pl_path.join(ngx.config.prefix(), ".kong_env")
   local config = assert(conf_loader(conf_path, nil, { from_kong_env = true }))
+  print("config = " .. require("inspect")(config))
 
   reset_kong_shm(config)
 
