@@ -66,17 +66,19 @@ local function get(reference)
     -- TODO: parse config options from URL
     vault = { name = prefix, config = {}}
     local v_mod = "kong.vaults." .. vault.name
-    local vault_m = require (v_mod)
-    -- TODO: is this required? Shouldn't .init() be loaded implicitly
-    if not vault_m then
-      -- TODO: what to do if that fails?
-      return nil, fmt("could not find vault %s", prefix)
+    local ok, mod = pcall(require, v_mod)
+    -- print("ok = " .. require("inspect")(ok))
+    -- print("mod = " .. require("inspect")(mod))
+    if not ok then
+      print("ok = " .. require("inspect")(ok))
+      return nil, fmt("could not find vault %s", vault.name)
     end
-    vault_m.init()
+    -- TODO: is this required? Shouldn't .init() be loaded implicitly
+    mod.init()
 
-    local deref, deref_err = vault_m.get(vault.config, resource)
+    local deref, deref_err = mod.get(vault.config, resource)
     if not deref then
-      return nil, fmt("unable load value (%s): %s [%s]", resource, deref_err, tostring(reference))
+      return nil, fmt("unable loto ad value (%s): %s [%s]", resource, deref_err, tostring(reference))
     end
 
     return tostring(deref)

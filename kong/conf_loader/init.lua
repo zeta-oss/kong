@@ -1581,7 +1581,9 @@ local function load(path, custom_conf, opts)
           conf[k] = deref
         end
         if deref == "nil" or deref_err then
-          return nil, fmt("failed to dereference <%s> for config option %s. TODO. what to do here? fail the startup sequence?", k, v)
+          -- TODO: what to do here? Fail hard or error log?
+          -- return nil, fmt("failed to dereference <%s> for config option %s. k, v)
+          log.error(fmt("failed to dereference %s. %s", v, deref_err))
         end
       end
     end
