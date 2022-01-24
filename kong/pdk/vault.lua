@@ -58,7 +58,7 @@ local function get(reference)
 
   local prefix = url.host
   local resource = sub(url.path, 2)
-  local config = url.query
+  -- local config = url.query
   local strategy
   local vault
   if IS_CLI then
