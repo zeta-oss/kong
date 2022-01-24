@@ -1548,7 +1548,7 @@ local function adjust_field_for_context(field, value, context, nulls, opts)
     end
 
     -- references are only resolved on proxy nodes
-    if  field.referencable
+    if field.referencable
     and field.type == "string"
     and kong.configuration.role ~= "control_plane"
     and ngx.ctx.KONG_PHASE ~= ADMIN_API_PHASE
