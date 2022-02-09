@@ -201,6 +201,9 @@
 -- @field kong.log
 -- @redirect kong.log
 
+--- Instance of Kong tracing factory with various utilities
+-- @field kong.trace
+-- @redirect kong.trace
 
 assert(package.loaded["resty.core"])
 
@@ -231,6 +234,7 @@ local MAJOR_VERSIONS = {
       "router",
       "nginx",
       "cluster",
+      "trace",
     },
   },
 
