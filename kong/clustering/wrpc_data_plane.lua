@@ -251,6 +251,7 @@ function _M:communicate(premature)
     ssl_verify = true,
     client_cert = self.cert,
     client_priv_key = self.cert_key,
+    protocols = "wrpc.konghq.com",
   }
   if conf.cluster_mtls == "shared" then
     opts.server_name = "kong_clustering"
@@ -286,8 +287,12 @@ function _M:communicate(premature)
     local resp, err = peer:call_wait("ConfigService.ReportMetadata", { plugins = self.plugins_list })
     if type(resp) == "table" then
       err = err or resp.error
-      resp = resp.ok
+      resp = resp[1] or resp.ok
     end
+    if type(resp) == "table" then
+      resp = resp.ok or resp
+    end
+
     if not resp then
       ngx_log(ngx_ERR, _log_prefix, "Couldn't report basic info to CP: ", err)
       assert(ngx.timer.at(reconnection_delay, function(premature)
@@ -324,8 +329,6 @@ function _M:communicate(premature)
               ngx_log(ngx_ERR, _log_prefix, "unable to update running config: ", err)
             end
 
-            ping_immediately = true
-
           else
             ngx_log(ngx_ERR, _log_prefix, "unable to update running config: ", res)
           end
@@ -348,7 +351,7 @@ function _M:communicate(premature)
 
       for _ = 1, PING_INTERVAL do
         ngx_sleep(1)
-        if exiting() then
+        if exiting() or peer.closing then
           return
         end
         if ping_immediately then
