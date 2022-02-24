@@ -1,10 +1,12 @@
 local timer_at = ngx.timer.at
 local timer_every = ngx.timer.every
 local sleep = ngx.sleep
+local exiting = ngx.exiting
 
 local log = ngx.log
 
 local ERR = ngx.ERR
+local DEBUG = ngx.DEBUG
 
 local wait = ngx.thread.wait
 local kill = ngx.thread.kill
@@ -26,7 +28,7 @@ local function print_wheel(self, timer_index)
     log(ERR, "nelt = " .. wheel.nelt)
     for i, v in ipairs(wheel.array) do
         for _, value in pairs(v) do
-            log(ERR, "timer: " .. timer_index .. ", index = " .. i .. ", name = " .. value.name .. ", data = " .. value.data .. 
+            log(ERR, "timer: " .. timer_index .. ", index = " .. i .. ", name = " .. value.name .. 
                 ", offset.second = " .. value.next_pointer.second ..
                 ", offset.minute = " .. value.next_pointer.minute ..
                 ", offset.hour = " .. value.next_pointer.hour)
@@ -41,7 +43,7 @@ local function print_wheel(self, timer_index)
     log(ERR, "nelt = " .. wheel.nelt)
     for i, v in ipairs(wheel.array) do
         for _, value in pairs(v) do
-            log(ERR, "timer: " .. timer_index .. ", index = " .. i .. ", name = " .. value.name .. ", data = " .. value.data .. 
+            log(ERR, "timer: " .. timer_index .. ", index = " .. i .. ", name = " .. value.name  .. 
                 ", offset.second = " .. value.next_pointer.second ..
                 ", offset.minute = " .. value.next_pointer.minute ..
                 ", offset.hour = " .. value.next_pointer.hour)
@@ -56,7 +58,7 @@ local function print_wheel(self, timer_index)
     log(ERR, "nelt = " .. wheel.nelt)
     for i, v in ipairs(wheel.array) do
         for _, value in pairs(v) do
-            log(ERR, "timer: " .. timer_index .. ", index = " .. i .. ", name = " .. value.name .. ", data = " .. value.data .. 
+            log(ERR, "timer: " .. timer_index .. ", index = " .. i .. ", name = " .. value.name .. 
                 ", offset.second = " .. value.next_pointer.second ..
                 ", offset.minute = " .. value.next_pointer.minute ..
                 ", offset.hour = " .. value.next_pointer.hour)
@@ -280,7 +282,7 @@ end
 
 
 local function worker_timer_callback(premature, self, timer_index)
-    while true do
+    while not exiting() do
         if premature then
             return
         end
@@ -314,7 +316,7 @@ end
 local function master_timer_callback(premature, self)
     local init = true
 
-    while true do
+    while not exiting() do
         if premature then
             return
         end
