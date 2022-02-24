@@ -576,6 +576,21 @@ end
 function Kong.init_worker()
   local ctx = ngx.ctx
 
+
+  do
+    local timer = require("kong.timer")
+    timer:configure()
+    timer:start()
+
+    _G.ngx.timer.at = function(delay, callback, ...)
+      return timer:create_once(nil, callback, delay, table.unpack({ ... }))
+    end
+
+    _G.ngx.timer.every = function(delay, callback, ...)
+      return timer:create_every(nil, callback, delay, table.unpack({ ... }))
+    end
+  end
+
   ctx.KONG_PHASE = PHASES.init_worker
 
   -- special math.randomseed from kong.globalpatches not taking any argument.

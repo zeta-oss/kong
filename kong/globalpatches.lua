@@ -427,19 +427,19 @@ return function(options)
     end
   end
 
-  do
-    local timer = require("kong.timer")
-    timer:configure()
-    timer:start()
+  -- do
+  --   local timer = require("kong.timer")
+  --   timer:configure()
+  --   timer:start()
 
-    _G.ngx.timer.at = function(delay, callback, ...)
-      return timer:create_once(nil, callback, delay, table.unpack({ ... }))
-    end
+  --   _G.ngx.timer.at = function(delay, callback, ...)
+  --     return timer:create_once(nil, callback, delay, table.unpack({ ... }))
+  --   end
 
-    _G.ngx.timer.every = function(delay, callback, ...)
-      return timer:create_every(nil, callback, delay, table.unpack({ ... }))
-    end
-  end
+  --   _G.ngx.timer.every = function(delay, callback, ...)
+  --     return timer:create_every(nil, callback, delay, table.unpack({ ... }))
+  --   end
+  -- end
 
   require "kong.deprecation".init(options.cli)
 end
