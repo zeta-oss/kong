@@ -315,6 +315,7 @@ end
 
 local function master_timer_callback(premature, self)
     local init = true
+    local sleep_count = 0
 
     while not exiting() do
         if premature then
@@ -332,12 +333,16 @@ local function master_timer_callback(premature, self)
                 self.timer_alive_flag[i] = false
             end
 
-            sleep(5)
+            if sleep_count < 5 then
+                sleep(1)
             
-            for i = 1, self.opt.real_timer do
-                if not self.timer_alive_flag[i] then
-                    timer_at(1, worker_timer_callback, self, i)
+            else
+                for i = 1, self.opt.real_timer do
+                    if not self.timer_alive_flag[i] then
+                        timer_at(1, worker_timer_callback, self, i)
+                    end
                 end
+
             end
 
         end
