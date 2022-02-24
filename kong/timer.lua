@@ -1,4 +1,5 @@
 local timer_at = ngx.timer.at
+local timer_every = ngx.timer.every
 local sleep = ngx.sleep
 
 local log = ngx.log
@@ -419,6 +420,10 @@ end
 
  
 function _M:create_once(name, callback, delay, ...)
+    if delay < 1 then
+        return timer_at(delay, callback, { ... })
+    end
+
     if not name then
         name = tostring(math.random())
     end
@@ -427,6 +432,10 @@ end
 
 
 function _M:create_every(name, callback, interval, ...)
+    if interval < 1 then
+        return timer_every(interval, callback, { ... })
+    end
+
     if not name then
         name = tostring(math.random())
     end
