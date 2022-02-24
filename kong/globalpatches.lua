@@ -429,7 +429,8 @@ return function(options)
 
   do
     local timer = require("kong.timer")
-    timer:new()
+    timer:configure()
+    timer:start()
 
     _G.ngx.timer.at = function(delay, callback, ...)
       return timer:create_once(nil, callback, delay, table.unpack({ ... }))
