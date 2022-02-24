@@ -3,6 +3,8 @@ local timer_every = ngx.timer.every
 local sleep = ngx.sleep
 local exiting = ngx.worker.exiting
 
+local unpack = table.unpack
+
 local log = ngx.log
 
 local ERR = ngx.ERR
@@ -159,16 +161,14 @@ local function job_re_cal_next_pointer(self, timer_index, job)
     local second_wheel = self.wheels_for_each_real_timer[timer_index].second_wheel
     local minute_wheel = self.wheels_for_each_real_timer[timer_index].minute_wheel
     local hour_wheel = self.wheels_for_each_real_timer[timer_index].hour_wheel
-    
-    local next_hour_pointer = 0
-    local next_minute_pointer = 0
-    local next_second_pointer = 0
 
     local cur_second_pointer = wheel_get_cur_pointer(second_wheel)
     local cur_minute_pointer = wheel_get_cur_pointer(minute_wheel)
     local cur_hour_pointer = wheel_get_cur_pointer(hour_wheel)
 
-    next_second_pointer = wheel_cal_pointer(second_wheel, cur_second_pointer, delay_second)
+    local next_hour_pointer = 0
+    local next_minute_pointer = 0
+    local next_second_pointer = wheel_cal_pointer(second_wheel, cur_second_pointer, delay_second)
 
     if delay_minute ~= 0 then
         next_minute_pointer = wheel_cal_pointer(minute_wheel, cur_minute_pointer, delay_minute)
@@ -244,7 +244,7 @@ local function second_wheel_callback(self, timer_index, job)
     end
 
     if self.enable then
-        spawn(job.callback, false, table.unpack(job.args))
+        spawn(job.callback, false, unpack(job.args))
     end
 
 
@@ -426,7 +426,7 @@ end
  
 function _M:create_once(name, callback, delay, ...)
     if delay < 1 then
-        return timer_at(delay, callback, table.unpack({ ... }))
+        return timer_at(delay, callback, unpack({ ... }))
     end
 
     if not name then
@@ -438,7 +438,7 @@ end
 
 function _M:create_every(name, callback, interval, ...)
     if interval < 1 then
-        return timer_every(interval, callback, table.unpack({ ... }))
+        return timer_every(interval, callback, unpack({ ... }))
     end
 
     if not name then

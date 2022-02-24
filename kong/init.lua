@@ -62,12 +62,14 @@ require("kong.globalpatches")()
 local timer = require("kong.timer")
 timer:configure()
 
+local unpack = table.unpack
+
 _G.ngx.timer.at = function(delay, callback, ...)
-    return timer:create_once(nil, callback, delay, table.unpack({ ... }))
+    return timer:create_once(nil, callback, delay, unpack({ ... }))
   end
 
 _G.ngx.timer.every = function(delay, callback, ...)
-    return timer:create_every(nil, callback, delay, table.unpack({ ... }))
+    return timer:create_every(nil, callback, delay, unpack({ ... }))
 end
 
 
