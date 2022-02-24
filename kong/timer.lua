@@ -1,7 +1,7 @@
 local timer_at = ngx.timer.at
 local timer_every = ngx.timer.every
 local sleep = ngx.sleep
-local exiting = ngx.exiting
+local exiting = ngx.worker.exiting
 
 local log = ngx.log
 
