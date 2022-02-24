@@ -168,9 +168,7 @@ local function job_re_cal_next_pointer(self, timer_index, job)
     local cur_minute_pointer = wheel_get_cur_pointer(minute_wheel)
     local cur_hour_pointer = wheel_get_cur_pointer(hour_wheel)
 
-    if delay_second ~= 0 then
-        next_second_pointer = wheel_cal_pointer(second_wheel, cur_second_pointer, delay_second)
-    end
+    next_second_pointer = wheel_cal_pointer(second_wheel, cur_second_pointer, delay_second)
 
     if delay_minute ~= 0 then
         next_minute_pointer = wheel_cal_pointer(minute_wheel, cur_minute_pointer, delay_minute)
@@ -428,7 +426,7 @@ end
  
 function _M:create_once(name, callback, delay, ...)
     if delay < 1 then
-        return timer_at(delay, callback, { ... })
+        return timer_at(delay, callback, table.unpack({ ... }))
     end
 
     if not name then
@@ -440,7 +438,7 @@ end
 
 function _M:create_every(name, callback, interval, ...)
     if interval < 1 then
-        return timer_every(interval, callback, { ... })
+        return timer_every(interval, callback, table.unpack({ ... }))
     end
 
     if not name then
