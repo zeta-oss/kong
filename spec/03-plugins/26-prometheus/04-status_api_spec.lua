@@ -398,7 +398,7 @@ describe("Plugin: prometheus (access via status API)", function()
     end, 15)
   end)
 
-  it("remove metrics from deleted targets", function()
+  it("remove metrics from deleted targets #only", function()
     local admin_client = helpers.admin_client()
     assert(admin_client:send {
       method  = "DELETE",
