@@ -431,6 +431,8 @@ function _M:create_once(name, callback, delay, ...)
         return timer_at(delay, callback, unpack({ ... }))
     end
 
+    delay = math.ceil(delay)
+
     if not name then
         name = tostring(math.random())
     end
@@ -442,6 +444,8 @@ function _M:create_every(name, callback, interval, ...)
     if interval < 1 then
         return timer_every(interval, callback, unpack({ ... }))
     end
+
+    interval = math.ceil(interval)
 
     if not name then
         name = tostring(math.random())
