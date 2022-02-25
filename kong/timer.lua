@@ -108,8 +108,6 @@ local function wheel_insert(wheel, pointer, job)
     assert(wheel)
     assert(pointer > 0)
 
-    log(ERR, "name = " .. job.name .. ", pointer = " .. pointer)
-
     if not wheel.array[pointer][job.name] then
         wheel.array[pointer][job.name] = job
     else

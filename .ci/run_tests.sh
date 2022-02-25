@@ -74,57 +74,52 @@ if [ "$TEST_SUITE" == "plugins" ]; then
         PLUGINS=$(ls -d spec/03-plugins/*)
     fi
 
-    # for p in $PLUGINS; do
-    #     echo
-    #     cyan "--------------------------------------"
-    #     cyan $(basename $p)
-    #     cyan "--------------------------------------"
-    #     echo
+    for p in $PLUGINS; do
+        echo
+        cyan "--------------------------------------"
+        cyan $(basename $p)
+        cyan "--------------------------------------"
+        echo
 
-    #     $TEST_CMD $p || echo "* $p" >> .failed
-    # done
+        $TEST_CMD $p || echo "* $p" >> .failed
+    done
 
-    KONG_TEST_DONT_CLEAN=1 ./bin/busted -t only spec/03-plugins/31-proxy-cache/04-invalidations_spec.lua
+    if [[ "$TEST_SPLIT" == second* ]] || [[ "$TEST_SPLIT" != first* ]]; then
+        cat kong-*.rockspec | grep kong- | grep -v zipkin | grep -v sidecar | grep "~" | grep -v kong-prometheus-plugin | while read line ; do
+            REPOSITORY=`echo $line | sed "s/\"/ /g" | awk -F" " '{print $1}'`
+            VERSION=`luarocks show $REPOSITORY | grep $REPOSITORY | head -1 | awk -F" " '{print $2}' | cut -f1 -d"-"`
+            REPOSITORY=`echo $REPOSITORY | sed -e 's/kong-prometheus-plugin/kong-plugin-prometheus/g'`
+            REPOSITORY=`echo $REPOSITORY | sed -e 's/kong-proxy-cache-plugin/kong-plugin-proxy-cache/g'`
 
-    cat ./servroot1/logs/error.log
-    cat ./servroot2/logs/error.log
+            echo
+            cyan "--------------------------------------"
+            cyan $REPOSITORY $VERSION
+            cyan "--------------------------------------"
+            echo
 
-    # if [[ "$TEST_SPLIT" == second* ]] || [[ "$TEST_SPLIT" != first* ]]; then
-    #     cat kong-*.rockspec | grep kong- | grep -v zipkin | grep -v sidecar | grep "~" | grep -v kong-prometheus-plugin | while read line ; do
-    #         REPOSITORY=`echo $line | sed "s/\"/ /g" | awk -F" " '{print $1}'`
-    #         VERSION=`luarocks show $REPOSITORY | grep $REPOSITORY | head -1 | awk -F" " '{print $2}' | cut -f1 -d"-"`
-    #         REPOSITORY=`echo $REPOSITORY | sed -e 's/kong-prometheus-plugin/kong-plugin-prometheus/g'`
-    #         REPOSITORY=`echo $REPOSITORY | sed -e 's/kong-proxy-cache-plugin/kong-plugin-proxy-cache/g'`
+            git clone https://github.com/Kong/$REPOSITORY.git --branch $VERSION --single-branch /tmp/test-$REPOSITORY || \
+            git clone https://github.com/Kong/$REPOSITORY.git --branch v$VERSION --single-branch /tmp/test-$REPOSITORY
+            sed -i 's/grpcbin:9000/localhost:15002/g' /tmp/test-$REPOSITORY/spec/*.lua
+            sed -i 's/grpcbin:9001/localhost:15003/g' /tmp/test-$REPOSITORY/spec/*.lua
+            cp -R /tmp/test-$REPOSITORY/spec/fixtures/* spec/fixtures/ || true
+            pushd /tmp/test-$REPOSITORY
+            luarocks make
+            popd
 
-    #         echo
-    #         cyan "--------------------------------------"
-    #         cyan $REPOSITORY $VERSION
-    #         cyan "--------------------------------------"
-    #         echo
+            $TEST_CMD /tmp/test-$REPOSITORY/spec/ || echo "* $REPOSITORY" >> .failed
 
-    #         git clone https://github.com/Kong/$REPOSITORY.git --branch $VERSION --single-branch /tmp/test-$REPOSITORY || \
-    #         git clone https://github.com/Kong/$REPOSITORY.git --branch v$VERSION --single-branch /tmp/test-$REPOSITORY
-    #         sed -i 's/grpcbin:9000/localhost:15002/g' /tmp/test-$REPOSITORY/spec/*.lua
-    #         sed -i 's/grpcbin:9001/localhost:15003/g' /tmp/test-$REPOSITORY/spec/*.lua
-    #         cp -R /tmp/test-$REPOSITORY/spec/fixtures/* spec/fixtures/ || true
-    #         pushd /tmp/test-$REPOSITORY
-    #         luarocks make
-    #         popd
+        done
+    fi
 
-    #         $TEST_CMD /tmp/test-$REPOSITORY/spec/ || echo "* $REPOSITORY" >> .failed
-
-    #     done
-    # fi
-
-    # if [ -f .failed ]; then
-    #     echo
-    #     red "--------------------------------------"
-    #     red "Plugin tests failed:"
-    #     red "--------------------------------------"
-    #     cat .failed
-    #     exit 1
-    # else
-    #     exit 0
+    if [ -f .failed ]; then
+        echo
+        red "--------------------------------------"
+        red "Plugin tests failed:"
+        red "--------------------------------------"
+        cat .failed
+        exit 1
+    else
+        exit 0
     fi
 fi
 if [ "$TEST_SUITE" == "pdk" ]; then

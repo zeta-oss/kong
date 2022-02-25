@@ -164,7 +164,7 @@ describe("proxy-cache invalidations via: " .. strategy, function()
       assert.same("Miss", res_2.headers["X-Cache-Status"])
     end)
 
-    it("propagates purges via cluster events mechanism #only", function()
+    it("propagates purges via cluster events mechanism", function()
       local res_1 = assert(client_1:send {
         method = "GET",
         path = "/get",
