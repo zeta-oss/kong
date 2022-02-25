@@ -74,17 +74,15 @@ if [ "$TEST_SUITE" == "plugins" ]; then
         PLUGINS=$(ls -d spec/03-plugins/*)
     fi
 
-    # for p in $PLUGINS; do
-    #     echo
-    #     cyan "--------------------------------------"
-    #     cyan $(basename $p)
-    #     cyan "--------------------------------------"
-    #     echo
+    for p in $PLUGINS; do
+        echo
+        cyan "--------------------------------------"
+        cyan $(basename $p)
+        cyan "--------------------------------------"
+        echo
 
-    #     $TEST_CMD $p || echo "* $p" >> .failed
-    # done
-
-    KONG_TEST_DONT_CLEAN=1 ./bin/busted -t only spec/03-plugins/26-prometheus/04-status_api_spec.lua
+        $TEST_CMD $p || echo "* $p" >> .failed
+    done
 
     if [[ "$TEST_SPLIT" == second* ]] || [[ "$TEST_SPLIT" != first* ]]; then
         cat kong-*.rockspec | grep kong- | grep -v zipkin | grep -v sidecar | grep "~" | grep -v kong-prometheus-plugin | while read line ; do
