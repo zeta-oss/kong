@@ -622,7 +622,7 @@ end
 
 function _M:once(name, callback, delay, ...)
     if delay == 0 then
-        timer_at(delay, callback, unpack({ ... }))
+        return timer_at(delay, callback, unpack({ ... }))
     end
     
     return create(self, name, callback, delay, true, { ... })
