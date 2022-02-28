@@ -552,8 +552,6 @@ end
 
 
 function _M:configure(options)
-    ngx.eeeee[1] = 1
-
     math.randomseed(os.time())
 
     local opt = {
