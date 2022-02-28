@@ -545,12 +545,7 @@ local function create(self ,name, callback, delay, once, args)
     local job = job_create(wheel, name, callback, delay, once, args)
     self.jobs[name] = job
 
-    if once and delay == 0 then
-        return timer_at(0, job_wrapper, job)
-        
-    else
-        return insert_job_to_wheel(wheel, job)
-    end
+    return insert_job_to_wheel(wheel, job)
 end
 
 
@@ -626,6 +621,10 @@ end
 
 
 function _M:once(name, callback, delay, ...)
+    if delay == 0 then
+        timer_at(delay, callback, unpack({ ... }))
+    end
+    
     return create(self, name, callback, delay, true, { ... })
 end
 
