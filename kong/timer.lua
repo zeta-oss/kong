@@ -135,7 +135,7 @@ local function get_variance(cur_value, cur_count, old_variance, old_avg)
 end
 
 
-local function job_wrapper(job, wheel)
+local function job_wrapper(job)
     local stats = job.stats
     local latency = stats.latency
     stats.runs = stats.runs + 1
@@ -363,7 +363,7 @@ local function job_create(wheel, name, callback, delay, once, args)
             finish = 0
         },
         meta = {
-            name = "",
+            name = "[C]",
             callstack = {}
         }
     }
@@ -430,7 +430,7 @@ local function worker_timer_callback(premature, self, wheel)
 
         for name, job in pairs(callbacks) do
             if job.enable then
-                spawn(job_wrapper, job, wheel)
+                spawn(job_wrapper, job)
             end
 
             if not job.once then
@@ -543,10 +543,14 @@ local function create(self ,name, callback, delay, once, args)
     end
 
     local job = job_create(wheel, name, callback, delay, once, args)
-
     self.jobs[name] = job
 
-    return insert_job_to_wheel(wheel, job)
+    if once and delay == 0 then
+        return timer_at(0, job_wrapper, job)
+        
+    else
+        return insert_job_to_wheel(wheel, job)
+    end
 end
 
 
@@ -622,19 +626,12 @@ end
 
 
 function _M:once(name, callback, delay, ...)
-    if delay == 0 then
-        return timer_at(delay, callback, unpack({ ... }))
-    end
-
     return create(self, name, callback, delay, true, { ... })
 end
 
 
 function _M:every(name, callback, interval, ...)
-    if interval == 0 then
-        return timer_every(interval, callback, unpack({ ... }))
-    end
-
+    assert(interval > 0)
     return create(self, name, callback, interval, false, { ... })
 end
 
