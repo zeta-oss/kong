@@ -37,6 +37,24 @@ local DEFAULT_REAL_TIMER = 10
 local _M = {}
 
 
+local function job_tostring(job)
+    local str = ""
+    
+    local stats = job.stats
+    local latency = stats.latency
+    local meta = job.meta
+
+    str = str .. "name = " .. job.name
+    str = str .. ", latency.max = " .. latency.max
+    str = str .. ", latency.min = " .. latency.min
+    str = str .. ", latency.avg = " .. latency.avg
+    str = str .. ", latency.variance = " .. latency.variance
+    str = str .. ", meta.name = " .. meta.name
+
+    return str
+end
+
+
 local function print_wheel(self, _wheel)
     local wheel
 
@@ -46,7 +64,7 @@ local function print_wheel(self, _wheel)
     log(ERR, "nelt = " .. wheel.nelt)
     for i, v in ipairs(wheel.array) do
         for _, value in pairs(v) do
-            log(ERR, "timer: " .. _wheel.real_timer .. ", index = " .. i .. ", name = " .. value.name .. 
+            log(ERR, "index = " .. i .. ", " .. job_tostring(value) .. ", " .. 
                 ", offset.second = " .. value.next_pointer.second ..
                 ", offset.minute = " .. value.next_pointer.minute ..
                 ", offset.hour = " .. value.next_pointer.hour)
@@ -61,7 +79,7 @@ local function print_wheel(self, _wheel)
     log(ERR, "nelt = " .. wheel.nelt)
     for i, v in ipairs(wheel.array) do
         for _, value in pairs(v) do
-            log(ERR, "timer: " .. _wheel.real_timer .. ", index = " .. i .. ", name = " .. value.name .. 
+            log(ERR, "index = " .. i .. ", " .. job_tostring(value) .. ", " .. 
                 ", offset.second = " .. value.next_pointer.second ..
                 ", offset.minute = " .. value.next_pointer.minute ..
                 ", offset.hour = " .. value.next_pointer.hour)
@@ -76,7 +94,7 @@ local function print_wheel(self, _wheel)
     log(ERR, "nelt = " .. wheel.nelt)
     for i, v in ipairs(wheel.array) do
         for _, value in pairs(v) do
-            log(ERR, "timer: " .. _wheel.real_timer .. ", index = " .. i .. ", name = " .. value.name  .. 
+            log(ERR, "index = " .. i .. ", " .. job_tostring(value) .. ", " .. 
                 ", offset.second = " .. value.next_pointer.second ..
                 ", offset.minute = " .. value.next_pointer.minute ..
                 ", offset.hour = " .. value.next_pointer.hour)
@@ -91,7 +109,7 @@ local function print_wheel(self, _wheel)
     log(ERR, "nelt = " .. wheel.nelt)
     for i, v in ipairs(wheel.array) do
         for _, value in pairs(v) do
-            log(ERR, "timer: " .. _wheel.real_timer .. ", index = " .. i .. ", name = " .. value.name .. 
+            log(ERR, "index = " .. i .. ", " .. job_tostring(value) .. ", " .. 
                 ", offset.second = " .. value.next_pointer.second ..
                 ", offset.minute = " .. value.next_pointer.minute ..
                 ", offset.hour = " .. value.next_pointer.hour)
@@ -123,7 +141,15 @@ local function job_wrapper(job, wheel)
     stats.runs = stats.runs + 1
     local start = now()
 
+    if job.running then
+        return
+    end
+
+    job.running = true
+
     job.callback(false, unpack(job.args))
+
+    job.running = false
 
     local finish = stats.finish + 1
     stats.finish = finish
@@ -143,7 +169,7 @@ local function job_wrapper(job, wheel)
     local old_variance = latency.variance
     latency.variance = get_variance(spend, finish, old_variance, old_avg)
 
-    log(ERR, job)
+    -- log(ERR, job)
 
 end
 
@@ -265,24 +291,6 @@ local function job_re_cal_next_pointer(job, wheel)
 end
 
 
-local function job_tostring(job)
-    local str = ""
-    
-    local stats = job.stats
-    local latency = stats.latency
-    local meta = job.meta
-
-    str = str .. "name = " .. job.name
-    str = str .. ", latency.max = " .. latency.max
-    str = str .. ", latency.min = " .. latency.min
-    str = str .. ", latency.avg = " .. latency.avg
-    str = str .. ", latency.variance = " .. latency.variance
-    str = str .. ", meta.name = " .. meta.name
-
-    return str
-end
-
-
 local function job_create_meta(job)
     local meta = job.meta
     local callstack = meta.callstack
@@ -317,8 +325,6 @@ local function job_create(wheel, name, callback, delay, once, args)
     delay_msec = ceil(delay_msec)
     delay_msec = ceil(delay_msec / 100)
 
-    log(ERR, delay_msec)
-
     delay, _ = math.modf(delay)
 
     local delay_hour = math.modf(delay / 60 / 60)
@@ -328,6 +334,7 @@ local function job_create(wheel, name, callback, delay, once, args)
 
     local ret = {
         enable = true,
+        running = false,
         name = name,
         callback = callback,
         delay = {
@@ -369,7 +376,7 @@ local function job_create(wheel, name, callback, delay, once, args)
         __tostring = job_tostring
     })
 
-    log(ERR, ret)
+    -- log(ERR, ret)
 
     return ret
 end
@@ -416,11 +423,6 @@ local function worker_timer_callback(premature, self, wheel)
         local second_wheel = wheel.sec
         local msec_wheel = wheel.msec
 
-        local threads = {
-            count = 0,
-            array = {}
-        }
-
 
         local real_timer = wheel.real_timer
 
@@ -428,8 +430,7 @@ local function worker_timer_callback(premature, self, wheel)
 
         for name, job in pairs(callbacks) do
             if job.enable then
-                threads.count = threads.count + 1 
-                threads.array[threads.count] = spawn(job_wrapper, job, wheel)
+                spawn(job_wrapper, job, wheel)
             end
 
             if not job.once then
@@ -467,10 +468,8 @@ local function worker_timer_callback(premature, self, wheel)
             end
         end
     
-        -- print_wheel(self, timer_index)
+        -- print_wheel(self, wheel)
         -- log(ERR, "")
-
-        wait(unpack(threads.array))
         
         real_timer.alive = true
         real_timer.counter.trigger = real_timer.counter.trigger + 1
